@@ -1,0 +1,130 @@
+"""Project slug, parent cascade root, and Work Package / feature resolution helpers."""
+
+from __future__ import annotations
+
+import re
+from collections import Counter
+from dataclasses import dataclass, field
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+from wallace.models import TurnUsage
+
+_WORKTREE_MARKER = "/worktrees/"
+_WP_NUM_NORMALIZE_RE = re.compile(r"(?i)^wp-?(\d+)$")
+
+
+@dataclass(slots=True)
+class DraftConversation:
+    """Unresolved conversation assembled before parent-tree project/feature propagation.
+
+    Attributes:
+        conversation_id: Conversation UUID directory name.
+        source: Origin application (`"ide"`, `"cli"`, or `"standalone"`).
+        title: Human-readable conversation title.
+        workspace_uris: Ordered `file://` workspace URIs collected across sidecars.
+        repo_slug: Optional `owner/repo` slug from trajectory metadata.
+        git_branch: Optional git branch name from trajectory metadata.
+        agent_name: Optional subagent role or swarm worker name.
+        parent_id: Immediate parent conversation UUID if subagent.
+        root_id: Explicit root cascade UUID if recorded.
+        started_at: Earliest ISO-8601 timestamp.
+        last_timestamp: Latest ISO-8601 timestamp.
+        turns: Ordered `TurnUsage` list.
+    """
+
+    conversation_id: str
+    source: str
+    title: str = ""
+    workspace_uris: list[str] = field(default_factory=list)
+    repo_slug: str = ""
+    git_branch: str = ""
+    agent_name: str = ""
+    parent_id: str = ""
+    root_id: str = ""
+    started_at: str = ""
+    last_timestamp: str = ""
+    turns: list[TurnUsage] = field(default_factory=list)
+
+
+def extract_project_from_uri(uri: str) -> str:
+    """Derive a clean project folder slug from a `file://` URI, skipping worktrees."""
+    if not uri or _WORKTREE_MARKER in uri or "/.gemini/" in uri:
+        return ""
+    parsed = urlparse(uri)
+    raw_path = unquote(parsed.path if parsed.scheme == "file" else uri)
+    path_obj = Path(raw_path)
+    parts = path_obj.parts
+    if "Projects" in parts:
+        idx = parts.index("Projects")
+        if idx + 1 < len(parts):
+            candidate = parts[idx + 1]
+            if candidate == "private" and idx + 2 < len(parts):
+                return parts[idx + 2]
+            return candidate
+    return path_obj.parent.name if path_obj.suffix else path_obj.name
+
+
+def resolve_root_id(cid: str, drafts: dict[str, DraftConversation]) -> str:
+    """Walk `parent_id` links without cycles to find the top-level conversation UUID."""
+    seen: set[str] = set()
+    curr = cid
+    while curr in drafts and curr not in seen:
+        seen.add(curr)
+        nxt = drafts[curr].parent_id or drafts[curr].root_id
+        if not nxt or nxt == curr or nxt not in drafts:
+            return nxt if (nxt and nxt != curr and not drafts[curr].root_id) else curr
+        curr = nxt
+    return curr
+
+
+def normalize_wp_token(raw_wp: str) -> str:
+    """Canonicalize Work Package tokens (`wp15` -> `WP-15`, `beta-wp-07` -> `BETA-WP-07`)."""
+    upper = raw_wp.upper()
+    num_match = _WP_NUM_NORMALIZE_RE.match(upper)
+    return f"WP-{int(num_match.group(1)):02d}" if num_match else upper
+
+
+def resolve_feature(
+    draft: DraftConversation,
+    root_draft: DraftConversation,
+    wp_regex: re.Pattern[str],
+    ignored_branches: set[str],
+) -> str:
+    """Resolve feature name via Work Package ID -> git branch -> root conversation title."""
+    for candidate_text in (draft.git_branch, draft.agent_name, draft.title):
+        if candidate_text:
+            wp_match = wp_regex.search(candidate_text)
+            if wp_match:
+                return normalize_wp_token(wp_match.group(1))
+
+    for target_branch in (draft.git_branch.strip(), root_draft.git_branch.strip()):
+        if (
+            target_branch
+            and target_branch not in ignored_branches
+            and not target_branch.startswith("subagent-")
+        ):
+            return target_branch
+    return root_draft.title or draft.title or f"conv-{root_draft.conversation_id[:8]}"
+
+
+def resolve_project(draft: DraftConversation, root_draft: DraftConversation) -> str:
+    """Resolve project slug from direct workspace URIs, git repo slug, or root parent."""
+    for target in (draft, root_draft):
+        for uri in target.workspace_uris:
+            slug = extract_project_from_uri(uri)
+            if slug:
+                return slug
+        if target.repo_slug:
+            return target.repo_slug.split("/")[-1]
+    return "unassigned"
+
+
+def dominant_model(turns: list[TurnUsage]) -> str:
+    """Return the model accounting for the largest share of tokens in `turns`."""
+    if not turns:
+        return "unknown"
+    totals: Counter[str] = Counter()
+    for turn in turns:
+        totals[turn.model] += max(turn.total_tokens, 1)
+    return totals.most_common(1)[0][0]

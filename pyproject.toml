@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wallace"
+version = "0.1.0"
+description = "Forensic token usage and USD cost auditor for Antigravity IDE and CLI brains, named after Oscar Wallace."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Lino" }]
+dependencies = [
+  "jsonschema>=4.23.0",
+  "prometheus-client>=0.21.0",
+]
+
+[project.scripts]
+wallace = "wallace.cli:main"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.13.0",
+  "pytest>=8.3.0",
+  "pytest-cov>=6.0.0",
+  "ruff>=0.8.0",
+  "types-jsonschema>=4.23.0",
+  "zensical>=0.0.20",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wallace"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "W",
+  "I",
+  "N",
+  "D",
+  "UP",
+  "B",
+  "C4",
+  "C90",
+  "SIM",
+  "RUF",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=wallace --cov-report=term-missing"

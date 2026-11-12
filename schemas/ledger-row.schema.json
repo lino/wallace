@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.wallace.local/v1/ledger-row.schema.json",
+  "title": "Wallace Ledger Row (NDJSON / JSONL)",
+  "description": "Single newline-delimited JSON (JSONL) ledger record emitted by 'wallace report ... --format jsonl' for VisiData and streaming pipelines.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "period",
+    "period_start",
+    "source",
+    "project",
+    "feature",
+    "conversation_id",
+    "title",
+    "model",
+    "conversation_count",
+    "turn_count",
+    "input_tokens",
+    "cached_input_tokens",
+    "output_tokens",
+    "thinking_tokens",
+    "total_tokens",
+    "cost_usd"
+  ],
+  "properties": {
+    "period": {
+      "type": "string",
+      "description": "Timeframe bucket label (YYYY-MM-DD, YYYY-Www, YYYY-MM, interval, or '*')."
+    },
+    "period_start": {
+      "type": "string",
+      "description": "ISO-8601 start date or timestamp of the timeframe bucket, or empty string."
+    },
+    "source": {
+      "type": "string",
+      "description": "Origin environment (ide, cli, standalone, mixed, or none).",
+      "enum": [
+        "ide",
+        "cli",
+        "standalone",
+        "mixed",
+        "none"
+      ]
+    },
+    "project": {
+      "type": "string",
+      "description": "Resolved project name or '*' when aggregated across projects."
+    },
+    "feature": {
+      "type": "string",
+      "description": "Resolved Work Package, git branch, root title, or '*'."
+    },
+    "conversation_id": {
+      "type": "string",
+      "description": "Conversation UUID when grouped by conversation, else empty string."
+    },
+    "title": {
+      "type": "string",
+      "description": "Conversation title when grouped by conversation, else empty string."
+    },
+    "model": {
+      "type": "string",
+      "description": "Canonical model identifier, 'mixed', or 'none'."
+    },
+    "conversation_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of conversations included in this bucket."
+    },
+    "turn_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of LLM generation turns included in this bucket."
+    },
+    "input_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total uncached prompt input tokens."
+    },
+    "cached_input_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total cache-read prompt input tokens."
+    },
+    "output_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total output tokens (including thinking tokens)."
+    },
+    "thinking_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total reasoning/thinking tokens reported."
+    },
+    "total_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sum of input_tokens, cached_input_tokens, and output_tokens."
+    },
+    "cost_usd": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Estimated total USD cost rounded to 6 decimal places."
+    }
+  }
+}

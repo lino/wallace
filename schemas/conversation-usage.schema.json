@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.wallace.local/v1/conversation-usage.schema.json",
+  "title": "Wallace Single-Conversation Token & Cost Audit",
+  "description": "Detailed self, subagent, and combined token usage and USD cost breakdown for a single Antigravity conversation ID.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "conversation_id",
+    "source",
+    "project",
+    "feature",
+    "title",
+    "git_branch",
+    "parent_conversation_id",
+    "root_conversation_id",
+    "primary_model",
+    "started_at",
+    "last_timestamp",
+    "self_usage",
+    "subagent_usage",
+    "total_usage",
+    "models",
+    "subagents"
+  ],
+  "properties": {
+    "conversation_id": {
+      "type": "string",
+      "description": "Conversation UUID."
+    },
+    "source": {
+      "type": "string",
+      "description": "Origin environment.",
+      "enum": [
+        "ide",
+        "cli",
+        "standalone"
+      ]
+    },
+    "project": {
+      "type": "string",
+      "description": "Resolved project name."
+    },
+    "feature": {
+      "type": "string",
+      "description": "Resolved feature or Work Package ID."
+    },
+    "title": {
+      "type": "string",
+      "description": "Conversation title."
+    },
+    "git_branch": {
+      "type": "string",
+      "description": "Git branch if recorded."
+    },
+    "parent_conversation_id": {
+      "type": "string",
+      "description": "Immediate parent conversation UUID if subagent."
+    },
+    "root_conversation_id": {
+      "type": "string",
+      "description": "Root conversation UUID in subagent hierarchy."
+    },
+    "primary_model": {
+      "type": "string",
+      "description": "Dominant model identifier."
+    },
+    "started_at": {
+      "type": "string",
+      "description": "Earliest ISO-8601 timestamp."
+    },
+    "last_timestamp": {
+      "type": "string",
+      "description": "Latest ISO-8601 timestamp."
+    },
+    "self_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "turn_count",
+        "input_tokens",
+        "cached_input_tokens",
+        "output_tokens",
+        "thinking_tokens",
+        "total_tokens",
+        "cost_usd"
+      ],
+      "properties": {
+        "turn_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Turn count."
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Uncached input tokens."
+        },
+        "cached_input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cache-read input tokens."
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Output tokens."
+        },
+        "thinking_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Thinking tokens."
+        },
+        "total_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total tokens."
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Estimated USD cost."
+        }
+      }
+    },
+    "subagent_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "turn_count",
+        "input_tokens",
+        "cached_input_tokens",
+        "output_tokens",
+        "thinking_tokens",
+        "total_tokens",
+        "cost_usd",
+        "subagent_count"
+      ],
+      "properties": {
+        "turn_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Turn count."
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Uncached input tokens."
+        },
+        "cached_input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cache-read input tokens."
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Output tokens."
+        },
+        "thinking_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Thinking tokens."
+        },
+        "total_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total tokens."
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Estimated USD cost."
+        },
+        "subagent_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of descendant subagent conversations."
+        }
+      }
+    },
+    "total_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "turn_count",
+        "input_tokens",
+        "cached_input_tokens",
+        "output_tokens",
+        "thinking_tokens",
+        "total_tokens",
+        "cost_usd"
+      ],
+      "properties": {
+        "turn_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Turn count."
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Uncached input tokens."
+        },
+        "cached_input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cache-read input tokens."
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Output tokens."
+        },
+        "thinking_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Thinking tokens."
+        },
+        "total_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total tokens."
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Estimated USD cost."
+        }
+      }
+    },
+    "models": {
+      "type": "array",
+      "description": "Per-model token and cost breakdown across self and subagents.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model",
+          "turn_count",
+          "input_tokens",
+          "cached_input_tokens",
+          "output_tokens",
+          "thinking_tokens",
+          "total_tokens",
+          "cost_usd"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model identifier."
+          },
+          "turn_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Turn count."
+          },
+          "input_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Uncached input tokens."
+          },
+          "cached_input_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Cache-read input tokens."
+          },
+          "output_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Output tokens."
+          },
+          "thinking_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Thinking tokens."
+          },
+          "total_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total tokens."
+          },
+          "cost_usd": {
+            "type": "number",
+            "minimum": 0.0,
+            "description": "Estimated USD cost."
+          }
+        }
+      }
+    },
+    "subagents": {
+      "type": "array",
+      "description": "Summary of descendant subagent conversations.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversation_id",
+          "agent_name",
+          "feature",
+          "title",
+          "primary_model",
+          "total_tokens",
+          "cost_usd"
+        ],
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Subagent UUID."
+          },
+          "agent_name": {
+            "type": "string",
+            "description": "Subagent role/preset."
+          },
+          "feature": {
+            "type": "string",
+            "description": "Resolved subagent feature."
+          },
+          "title": {
+            "type": "string",
+            "description": "Subagent title."
+          },
+          "primary_model": {
+            "type": "string",
+            "description": "Dominant model."
+          },
+          "total_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total tokens."
+          },
+          "cost_usd": {
+            "type": "number",
+            "minimum": 0.0,
+            "description": "Estimated USD cost."
+          }
+        }
+      }
+    },
+    "turns": {
+      "type": "array",
+      "description": "Optional chronological turn-by-turn ledger when --turns is set.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "turn_index",
+          "created_at",
+          "model",
+          "input_tokens",
+          "cached_input_tokens",
+          "output_tokens",
+          "thinking_tokens",
+          "total_tokens",
+          "cost_usd"
+        ],
+        "properties": {
+          "turn_index": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based turn index."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Turn ISO-8601 timestamp."
+          },
+          "model": {
+            "type": "string",
+            "description": "Turn model identifier."
+          },
+          "input_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Turn uncached input tokens."
+          },
+          "cached_input_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Turn cached input tokens."
+          },
+          "output_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Turn output tokens."
+          },
+          "thinking_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Turn thinking tokens."
+          },
+          "total_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Turn total tokens."
+          },
+          "cost_usd": {
+            "type": "number",
+            "minimum": 0.0,
+            "description": "Turn estimated USD cost."
+          }
+        }
+      }
+    }
+  }
+}

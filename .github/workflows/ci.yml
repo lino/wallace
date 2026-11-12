@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Lint, Typecheck & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up mise toolchain
+        uses: jdx/mise-action@v2
+        with:
+          cache: true
+
+      - name: Install locked dependencies
+        run: mise run setup
+
+      - name: Run formatting, lint, strict mypy, and pytest gates
+        run: mise run verify
+
+      - name: Run CLI and schema smoke checks
+        run: |
+          uv run wallace --version
+          uv run wallace schema list
+          uv run wallace --completions zsh >/dev/null
+
+  docs:
+    name: Zensical Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up mise toolchain
+        uses: jdx/mise-action@v2
+        with:
+          cache: true
+
+      - name: Install locked dependencies
+        run: mise run setup
+
+      - name: Build Zensical manuals strictly
+        run: mise run docs
+
+      - name: Upload built documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zensical-docs
+          path: site/
+          retention-days: 7
+
+  docker:
+    name: Container Runtime
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build multi-stage Docker image
+        run: docker build -t wallace:ci .
+
+      - name: Smoke-test container entrypoint and metrics
+        run: |
+          docker run --rm wallace:ci --version
+          docker run --rm wallace:ci metrics export

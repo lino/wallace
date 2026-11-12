@@ -1,0 +1,17 @@
+services:
+  wallace-metrics:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["metrics", "serve", "--host", "0.0.0.0", "--port", "9464", "--refresh-seconds", "60"]
+    environment:
+      WALLACE_IDE_DIR: /data/antigravity
+      WALLACE_CLI_DIR: /data/antigravity-cli
+      WALLACE_METRICS_HOST: 0.0.0.0
+      WALLACE_METRICS_PORT: "9464"
+    ports:
+      - "${WALLACE_BIND_PORT:-9464}:9464"
+    volumes:
+      - "${WALLACE_HOST_IDE_DIR:-~/.gemini/antigravity}:/data/antigravity:ro"
+      - "${WALLACE_HOST_CLI_DIR:-~/.gemini/antigravity-cli}:/data/antigravity-cli:ro"
+    restart: unless-stopped

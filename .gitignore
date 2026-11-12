@@ -1,0 +1,23 @@
+# Virtual environments & Python build artifacts
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Tooling & test caches
+.cache/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Documentation build output
+site/
+
+# Local overrides & region tracking (per project rules)
+mise.local.toml
+.regions.md

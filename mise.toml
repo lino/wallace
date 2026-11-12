@@ -1,0 +1,39 @@
+[tools]
+python = "3.13.16"
+uv = "0.13.1"
+
+[tasks.setup]
+description = "Install locked project and development dependencies"
+run = "uv sync --locked --all-groups"
+
+[tasks.fmt]
+description = "Format Python source and test files"
+run = "uv run ruff format src tests"
+
+[tasks.lint]
+description = "Enforce Google code style, docstrings, complexity, and strict static types"
+run = [
+  "uv run ruff check src tests",
+  "uv run mypy src tests",
+]
+
+[tasks.test]
+description = "Execute automated behavioural and schema contract test suites"
+run = "uv run pytest"
+
+[tasks.verify]
+description = "Run combined formatting check, lint, typecheck, and test gates"
+run = [
+  "uv run ruff format --check src tests",
+  "uv run ruff check src tests",
+  "uv run mypy src tests",
+  "uv run pytest",
+]
+
+[tasks.docs]
+description = "Build Zensical User, Operations, and Developer documentation strictly"
+run = "uv run zensical build --clean --strict"
+
+[tasks.metrics]
+description = "Emit Prometheus exposition metrics to stdout"
+run = "uv run wallace metrics export"

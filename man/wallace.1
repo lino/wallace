@@ -1,0 +1,84 @@
+.TH WALLACE 1 "November 2026" "wallace 0.1.0" "User Commands"
+.SH NAME
+wallace \- forensic token usage and USD cost auditor for Antigravity IDE and CLI brains
+.SH SYNOPSIS
+.B wallace
+[\fB\-\-config\fR \fIPATH\fR] [\fB\-\-help\fR | \fB\-\-help\-all\fR | \fB\-\-version\fR]
+.br
+.B wallace report
+[\fBsummary\fR|\fBprojects\fR|\fBfeatures\fR|\fBconversations\fR|\fBmodels\fR|\fBsources\fR|\fBdaily\fR|\fBweekly\fR|\fBmonthly\fR|\fBinterval\fR]
+[\fIOPTIONS\fR]
+.br
+.B wallace conversation show
+\fICONVERSATION_ID\fR [\fB\-\-turns\fR] [\fB\-\-format\fR \fBjson\fR|\fBtable\fR]
+.br
+.B wallace query
+\fICONVERSATION_ID\fR [\fB\-\-turns\fR]
+.br
+.B wallace visidata
+[\fBopen\fR|\fBconfig\fR|\fBinstall\fR] [\fIOPTIONS\fR]
+.br
+.B wallace config
+[\fBshow\fR|\fBinit\fR] [\fB\-\-output\fR \fIPATH\fR] [\fB\-\-force\fR]
+.br
+.B wallace metrics
+[\fBexport\fR|\fBserve\fR] [\fIOPTIONS\fR]
+.br
+.B wallace schema
+[\fB\-\-list\fR | \fINAME\fR] [\fB\-\-format\fR \fBjson\-schema\fR|\fBcsvw\fR] [\fB\-\-output\fR \fIPATH\fR]
+.SH DESCRIPTION
+Named after Oscar Wallace, the Treasury accountant who followed the ledger in
+\fIThe Untouchables\fR, \fBwallace\fR audits Antigravity IDE
+(\fI~/.gemini/antigravity\fR) and Antigravity CLI (\fI~/.gemini/antigravity-cli\fR)
+brain directories. It aggregates uncached input, cached input, thinking, and
+output tokens alongside estimated USD spend across timeframes (\fBday\fR,
+\fBweek\fR, \fBmonth\fR, or custom \fBinterval\fR), projects, features / Work
+Packages, conversations, and models.
+.PP
+\fBwallace\fR integrates directly with \fBVisiData\fR (\fBvd\fR) via flat typed
+JSONL streams, TSV/CSV tables, multi-sheet SQLite ledgers, and an installable
+VisiData plugin defining currency formatting, sum aggregators, and quick
+frequency shortcuts.
+.SH SUBCOMMANDS
+.TP
+.B report summary|projects|features|conversations|models|sources|daily|weekly|monthly|interval
+Aggregate token usage and USD spend across projects, features, and timeframes.
+Combine any report verb with \fB\-\-period day|week|month|interval\fR and
+\fB\-\-interval\fR (for example \fB6h\fR, \fB7d\fR, \fB14d\fR).
+.TP
+.B conversation show \fIID\fR / query \fIID\fR
+Query a single conversation UUID (or unambiguous prefix) and return self,
+subagent, and combined token usage and USD cost as JSON.
+.TP
+.B visidata open|config|install
+Launch VisiData with a multi-sheet Wallace SQLite workbook (or specific sheet),
+print the Wallace VisiData plugin snippet, or install it into \fI~/.visidata/\fR.
+.TP
+.B config show|init
+Print active configuration or write an editable default TOML pricing config.
+.TP
+.B metrics export|serve
+Emit Prometheus exposition metrics or run an HTTP \fI/metrics\fR exporter.
+.TP
+.B schema
+List or emit JSON Schema Draft 2020-12 and W3C CSVW data-interchange contracts.
+.SH ENVIRONMENT
+.TP
+.B WALLACE_CONFIG
+Path to TOML configuration file (default: \fI~/.config/wallace/config.toml\fR).
+.TP
+.B WALLACE_IDE_DIR, WALLACE_CLI_DIR, WALLACE_BRAIN_DIRS
+Override Antigravity IDE, CLI, and standalone brain directories.
+.TP
+.B WALLACE_METRICS_HOST, WALLACE_METRICS_PORT
+Override bind address and TCP port for \fBwallace metrics serve\fR.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Runtime, lookup, validation, or file error.
+.TP
+.B 2
+Invalid CLI argument or flag.

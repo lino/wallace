@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.wallace.local/v1/token-report.schema.json",
+  "title": "Wallace Token & Cost Audit Report",
+  "description": "Aggregated token usage and USD cost report across Antigravity IDE and CLI brain directories, grouped by timeframe, project, feature, or conversation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "group_by",
+    "period",
+    "interval",
+    "totals",
+    "buckets"
+  ],
+  "properties": {
+    "group_by": {
+      "type": "string",
+      "description": "Entity grouping dimension applied to the buckets array.",
+      "enum": [
+        "none",
+        "summary",
+        "project",
+        "feature",
+        "conversation",
+        "model",
+        "source"
+      ]
+    },
+    "period": {
+      "type": "string",
+      "description": "Timeframe bucketing mode applied to turns.",
+      "enum": [
+        "none",
+        "day",
+        "week",
+        "month",
+        "interval"
+      ]
+    },
+    "interval": {
+      "type": "string",
+      "description": "Custom duration specification when period is 'interval', else empty."
+    },
+    "totals": {
+      "$ref": "#/$defs/bucket",
+      "description": "Grand total token counts and USD cost across all buckets."
+    },
+    "buckets": {
+      "type": "array",
+      "description": "Ordered list of aggregated token usage buckets.",
+      "items": {
+        "$ref": "#/$defs/bucket"
+      }
+    }
+  },
+  "$defs": {
+    "bucket": {
+      "type": "object",
+      "description": "Aggregated token usage and USD cost bucket.",
+      "additionalProperties": false,
+      "required": [
+        "period",
+        "period_start",
+        "source",
+        "project",
+        "feature",
+        "conversation_id",
+        "title",
+        "model",
+        "conversation_count",
+        "turn_count",
+        "input_tokens",
+        "cached_input_tokens",
+        "output_tokens",
+        "thinking_tokens",
+        "total_tokens",
+        "cost_usd"
+      ],
+      "properties": {
+        "period": {
+          "type": "string",
+          "description": "Timeframe bucket label (YYYY-MM-DD, YYYY-Www, YYYY-MM, interval, or '*')."
+        },
+        "period_start": {
+          "type": "string",
+          "description": "ISO-8601 start date or timestamp of the timeframe bucket, or empty string."
+        },
+        "source": {
+          "type": "string",
+          "description": "Origin environment (ide, cli, standalone, mixed, or none).",
+          "enum": [
+            "ide",
+            "cli",
+            "standalone",
+            "mixed",
+            "none"
+          ]
+        },
+        "project": {
+          "type": "string",
+          "description": "Resolved project name or '*' when aggregated across projects."
+        },
+        "feature": {
+          "type": "string",
+          "description": "Resolved Work Package, git branch, root title, or '*'."
+        },
+        "conversation_id": {
+          "type": "string",
+          "description": "Conversation UUID when grouped by conversation, else empty string."
+        },
+        "title": {
+          "type": "string",
+          "description": "Conversation title when grouped by conversation, else empty string."
+        },
+        "model": {
+          "type": "string",
+          "description": "Canonical model identifier, 'mixed', or 'none'."
+        },
+        "conversation_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of conversations included in this bucket."
+        },
+        "turn_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of LLM generation turns included in this bucket."
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total uncached prompt input tokens."
+        },
+        "cached_input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total cache-read prompt input tokens."
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total output tokens (including thinking tokens)."
+        },
+        "thinking_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total reasoning/thinking tokens reported."
+        },
+        "total_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Sum of input_tokens, cached_input_tokens, and output_tokens."
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Estimated total USD cost rounded to 6 decimal places."
+        }
+      }
+    }
+  }
+}

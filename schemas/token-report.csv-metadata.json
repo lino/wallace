@@ -1,0 +1,117 @@
+{
+  "@context": "http://www.w3.org/ns/csvw",
+  "url": "token-report.csv",
+  "dc:title": "Wallace Token & Cost CSV Report",
+  "dc:description": "RFC 4180 CSV export of aggregated token usage and USD cost with spreadsheet formula-injection sanitization on string cells.",
+  "dialect": {
+    "delimiter": ",",
+    "quoteChar": "\"",
+    "doubleQuote": true,
+    "lineTerminators": [
+      "\n",
+      "\r\n"
+    ],
+    "encoding": "utf-8",
+    "header": true
+  },
+  "tableSchema": {
+    "columns": [
+      {
+        "name": "period",
+        "titles": "Period",
+        "datatype": "string",
+        "required": true
+      },
+      {
+        "name": "period_start",
+        "titles": "Period Start",
+        "datatype": "string",
+        "required": false
+      },
+      {
+        "name": "source",
+        "titles": "Source",
+        "datatype": "string",
+        "required": true
+      },
+      {
+        "name": "project",
+        "titles": "Project",
+        "datatype": "string",
+        "required": true
+      },
+      {
+        "name": "feature",
+        "titles": "Feature",
+        "datatype": "string",
+        "required": true
+      },
+      {
+        "name": "conversation_id",
+        "titles": "Conversation ID",
+        "datatype": "string",
+        "required": false
+      },
+      {
+        "name": "title",
+        "titles": "Title",
+        "datatype": "string",
+        "required": false
+      },
+      {
+        "name": "model",
+        "titles": "Model",
+        "datatype": "string",
+        "required": true
+      },
+      {
+        "name": "conversation_count",
+        "titles": "Conversations",
+        "datatype": "integer",
+        "required": true
+      },
+      {
+        "name": "turn_count",
+        "titles": "Turns",
+        "datatype": "integer",
+        "required": true
+      },
+      {
+        "name": "input_tokens",
+        "titles": "Input Tokens",
+        "datatype": "integer",
+        "required": true
+      },
+      {
+        "name": "cached_input_tokens",
+        "titles": "Cached Input Tokens",
+        "datatype": "integer",
+        "required": true
+      },
+      {
+        "name": "output_tokens",
+        "titles": "Output Tokens",
+        "datatype": "integer",
+        "required": true
+      },
+      {
+        "name": "thinking_tokens",
+        "titles": "Thinking Tokens",
+        "datatype": "integer",
+        "required": true
+      },
+      {
+        "name": "total_tokens",
+        "titles": "Total Tokens",
+        "datatype": "integer",
+        "required": true
+      },
+      {
+        "name": "cost_usd",
+        "titles": "Cost USD",
+        "datatype": "decimal",
+        "required": true
+      }
+    ]
+  }
+}

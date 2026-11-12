@@ -1,0 +1,20 @@
+[project]
+site_name = "Wallace Documentation"
+site_description = "Forensic token usage and USD cost auditor for Antigravity IDE and CLI brains."
+docs_dir = "docs"
+site_dir = "site"
+nav = [
+  { "Overview" = "index.md" },
+  { "User Manual" = [
+    { "Quickstart" = "user/quickstart.md" },
+    { "Timeframes & Conversation Queries" = "user/timeframes-and-queries.md" },
+    { "VisiData & Data Schemas" = "user/visidata-and-schemas.md" },
+  ] },
+  { "Operations Manual" = [
+    { "Docker Runtime & Prometheus Metrics" = "operations/deployment-and-metrics.md" },
+  ] },
+  { "Developer Manual" = [
+    { "Architecture (arc42)" = "developer/architecture.md" },
+  ] },
+  { "Glossary" = "glossary.md" },
+]
