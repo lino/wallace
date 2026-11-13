@@ -23,22 +23,23 @@ from wallace.exporters import (
     render_jsonl,
     render_plain,
     render_table,
+    render_task_usage_json,
     render_tsv,
     should_use_color,
 )
+from wallace.installer import install_launcher
 from wallace.metrics import render_prometheus_text, serve_metrics_http
 from wallace.models import ScanReport
 from wallace.query import query_conversation_usage
 from wallace.scanner import scan_brains
 from wallace.schemas import SCHEMA_NAMES, render_schema_document
+from wallace.task_query import query_task_usage, render_task_usage_table
 from wallace.visidata_integration import (
     export_sqlite_workbook,
     install_visidata_plugin,
     launch_visidata_workbook,
     render_visidata_plugin,
 )
-
-# region Command Handlers
 
 
 def _write_output(content: str, output_path: Path | None) -> None:
@@ -48,6 +49,11 @@ def _write_output(content: str, output_path: Path | None) -> None:
         output_path.write_text(content, encoding="utf-8")
         return
     sys.stdout.write(content)
+
+
+def _write_err(message: str) -> None:
+    """Write a newline-terminated diagnostic message to `sys.stderr`."""
+    sys.stderr.write(f"{message}\n")
 
 
 def _apply_cli_dir_overrides(ns: argparse.Namespace, cfg: AppConfig) -> AppConfig:
@@ -86,10 +92,9 @@ def _handle_report(ns: argparse.Namespace, cfg: AppConfig) -> int:
     fmt = str(ns.format)
     if fmt == "sqlite":
         if ns.output is None:
-            print(
+            _write_err(
                 "Error: '--format sqlite' requires '--output <file.sqlite>' because SQLite "
-                "databases are binary files.",
-                file=sys.stderr,
+                "databases are binary files."
             )
             return EXIT_USAGE
         export_sqlite_workbook(
@@ -106,7 +111,7 @@ def _handle_report(ns: argparse.Namespace, cfg: AppConfig) -> int:
             include_subagents=bool(ns.include_subagents),
         )
     except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        _write_err(f"Error: {exc}")
         return EXIT_USAGE
 
     rendered = _format_report_output(report, fmt=fmt, has_output_file=(ns.output is not None))
@@ -116,16 +121,15 @@ def _handle_report(ns: argparse.Namespace, cfg: AppConfig) -> int:
 
 def _format_report_output(report: ScanReport, *, fmt: str, has_output_file: bool) -> str:
     """Dispatch `ScanReport` rendering to the requested text/structured serializer."""
-    if fmt == "json":
-        return render_json(report)
-    if fmt == "jsonl":
-        return render_jsonl(report)
-    if fmt == "tsv":
-        return render_tsv(report)
-    if fmt == "csv":
-        return render_csv(report)
-    if fmt == "plain":
-        return render_plain(report)
+    serializers = {
+        "json": render_json,
+        "jsonl": render_jsonl,
+        "tsv": render_tsv,
+        "csv": render_csv,
+        "plain": render_plain,
+    }
+    if fmt in serializers:
+        return serializers[fmt](report)
     use_color = (not has_output_file) and should_use_color(sys.stdout)
     return render_table(report, color=use_color)
 
@@ -133,7 +137,7 @@ def _format_report_output(report: ScanReport, *, fmt: str, has_output_file: bool
 def _handle_conversation_query(ns: argparse.Namespace, cfg: AppConfig) -> int:
     """Execute `wallace query <id>` / `wallace conversation show <id>`."""
     if ns.noun == "conversation" and getattr(ns, "verb", None) != "show":
-        print("Error: Specify 'wallace conversation show <CONVERSATION_ID>'.", file=sys.stderr)
+        _write_err("Error: Specify 'wallace conversation show <CONVERSATION_ID>'.")
         return EXIT_USAGE
 
     effective_cfg = _apply_cli_dir_overrides(ns, cfg)
@@ -143,10 +147,36 @@ def _handle_conversation_query(ns: argparse.Namespace, cfg: AppConfig) -> int:
             records, str(ns.conversation_id), include_turns=bool(ns.turns)
         )
     except LookupError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        _write_err(f"Error: {exc}")
         return EXIT_ERROR
 
     _write_output(render_conversation_query_json(payload), ns.output)
+    return EXIT_OK
+
+
+def _handle_task(ns: argparse.Namespace, cfg: AppConfig) -> int:
+    """Execute `wallace task <TASK-ID>` and emit schema-validated JSON or aligned table."""
+    effective_cfg = _apply_cli_dir_overrides(ns, cfg)
+    records = scan_brains(effective_cfg)
+    extra_convs = [str(item) for item in (getattr(ns, "conversation", []) or [])]
+    try:
+        payload = query_task_usage(
+            records,
+            str(ns.task_id),
+            project=str(ns.project),
+            extra_conversations=extra_convs,
+            include_qa=bool(ns.include_qa),
+        )
+    except LookupError as exc:
+        _write_err(f"Error: {exc}")
+        return EXIT_ERROR
+
+    if str(ns.format) == "json":
+        rendered = render_task_usage_json(payload)
+    else:
+        use_color = (ns.output is None) and should_use_color(sys.stdout)
+        rendered = render_task_usage_table(payload, color=use_color)
+    _write_output(rendered, ns.output)
     return EXIT_OK
 
 
@@ -158,10 +188,7 @@ def _handle_visidata(ns: argparse.Namespace, cfg: AppConfig) -> int:
         return EXIT_OK
     if verb == "install":
         plugin_path, rc_path = install_visidata_plugin(getattr(ns, "output", None))
-        print(
-            f"Installed Wallace VisiData plugin to {plugin_path} (loaded via {rc_path})",
-            file=sys.stderr,
-        )
+        _write_err(f"Installed Wallace VisiData plugin to {plugin_path} (loaded via {rc_path})")
         return EXIT_OK
 
     effective_cfg = _apply_cli_dir_overrides(ns, cfg)
@@ -184,23 +211,18 @@ def _handle_visidata(ns: argparse.Namespace, cfg: AppConfig) -> int:
 def _handle_config(ns: argparse.Namespace, cfg: AppConfig) -> int:
     """Execute `wallace config show|init`."""
     toml_text = render_config_toml(cfg)
-    if ns.verb in (None, "show"):
+    if ns.verb in (None, "show") or ns.output is None:
         sys.stdout.write(toml_text)
         return EXIT_OK
 
-    target: Path | None = ns.output
-    if target is None:
-        sys.stdout.write(toml_text)
-        return EXIT_OK
-    resolved = target.expanduser()
+    resolved = ns.output.expanduser()
     if resolved.exists() and not ns.force:
-        print(
-            f"Error: Configuration file '{resolved}' already exists. Pass '--force' to overwrite.",
-            file=sys.stderr,
+        _write_err(
+            f"Error: Configuration file '{resolved}' already exists. Pass '--force' to overwrite."
         )
         return EXIT_ERROR
     _write_output(toml_text, resolved)
-    print(f"Wrote default configuration to {resolved}", file=sys.stderr)
+    _write_err(f"Wrote default configuration to {resolved}")
     return EXIT_OK
 
 
@@ -233,18 +255,28 @@ def _handle_schema(ns: argparse.Namespace) -> int:
         sys.stdout.write("\n".join(SCHEMA_NAMES) + "\n")
         return EXIT_OK
     if not ns.name:
-        print(
+        _write_err(
             f"Error: Missing schema name. Available schemas: {available}.\n"
-            "Run 'wallace schema --list' or 'wallace schema token-report'.",
-            file=sys.stderr,
+            "Run 'wallace schema --list' or 'wallace schema token-report'."
         )
         return EXIT_USAGE
     try:
         content = render_schema_document(str(ns.name), fmt=str(ns.format))
     except KeyError as exc:
-        print(f"Error: {exc.args[0]}", file=sys.stderr)
+        _write_err(f"Error: {exc.args[0]}")
         return EXIT_ERROR
     _write_output(content, ns.output)
+    return EXIT_OK
+
+
+def _handle_install(ns: argparse.Namespace) -> int:
+    """Execute `wallace install [--bin-dir <DIR>]`."""
+    try:
+        shim_path = install_launcher(getattr(ns, "bin_dir", None))
+    except OSError as exc:
+        _write_err(f"Error: Failed to install wallace launcher: {exc}")
+        return EXIT_ERROR
+    _write_err(f"Installed wallace launcher to {shim_path}")
     return EXIT_OK
 
 
@@ -288,30 +320,39 @@ def _dispatch_command(ns: argparse.Namespace, cfg: AppConfig) -> int:
     if ns.noun in (None, "report"):
         _ensure_report_defaults(ns)
         return _handle_report(ns, cfg)
-    if ns.noun in ("conversation", "query"):
-        return _handle_conversation_query(ns, cfg)
-    if ns.noun == "visidata":
-        return _handle_visidata(ns, cfg)
-    if ns.noun == "config":
-        return _handle_config(ns, cfg)
-    if ns.noun == "metrics":
-        return _handle_metrics(ns, cfg)
+    cfg_handlers = {
+        "conversation": _handle_conversation_query,
+        "query": _handle_conversation_query,
+        "task": _handle_task,
+        "visidata": _handle_visidata,
+        "config": _handle_config,
+        "metrics": _handle_metrics,
+    }
+    if ns.noun in cfg_handlers:
+        return cfg_handlers[ns.noun](ns, cfg)
     if ns.noun == "schema":
         return _handle_schema(ns)
+    if ns.noun == "install":
+        return _handle_install(ns)
     return EXIT_USAGE
+
+
+def _handle_help_all(raw_args: list[str]) -> int:
+    """Render extended `--help-all` output and return `EXIT_OK`."""
+    full_parser = build_parser(advanced_visible=True)
+    filtered = [a for a in raw_args if a != "--help-all"]
+    if not filtered:
+        full_parser.print_help(sys.stdout)
+        return EXIT_OK
+    full_parser.parse_args([*filtered, "--help"])
+    return EXIT_OK
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the `wallace` CLI and return a documented Unix exit status code."""
     raw_args = list(sys.argv[1:] if argv is None else argv)
     if "--help-all" in raw_args:
-        full_parser = build_parser(advanced_visible=True)
-        filtered = [a for a in raw_args if a != "--help-all"]
-        if not filtered:
-            full_parser.print_help(sys.stdout)
-            return EXIT_OK
-        full_parser.parse_args([*filtered, "--help"])
-        return EXIT_OK
+        return _handle_help_all(raw_args)
 
     args = _normalize_default_args(raw_args)
     is_help = any(f in args for f in ("-h", "--help"))
@@ -331,6 +372,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-# endregion

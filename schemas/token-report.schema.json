@@ -65,6 +65,7 @@
         "project",
         "feature",
         "conversation_id",
+        "conversation_ids",
         "title",
         "model",
         "conversation_count",
@@ -107,6 +108,14 @@
         "conversation_id": {
           "type": "string",
           "description": "Conversation UUID when grouped by conversation, else empty string."
+        },
+        "conversation_ids": {
+          "type": "array",
+          "description": "Sorted distinct conversation UUIDs included in this bucket.",
+          "items": {
+            "type": "string",
+            "description": "Antigravity conversation UUID."
+          }
         },
         "title": {
           "type": "string",

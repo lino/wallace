@@ -17,6 +17,7 @@ from wallace.schemas import (
     build_conversation_usage_json_schema,
     build_ledger_row_json_schema,
     build_report_json_schema,
+    build_task_usage_json_schema,
 )
 
 # region Constants & Defaults
@@ -71,31 +72,24 @@ def _select_table_columns(group_by: str, period: str) -> list[tuple[str, str, bo
     if period != "none":
         lead.append(("PERIOD", "period", False))
 
-    if group_by == "none":
-        lead.append(("SOURCE", "source", False))
-    elif group_by == "project":
-        lead.extend([("SOURCE", "source", False), ("PROJECT", "project", False)])
-    elif group_by == "model":
-        lead.extend([("MODEL", "model", False), ("SOURCE", "source", False)])
-    elif group_by == "source":
-        lead.append(("SOURCE", "source", False))
-    elif group_by == "conversation":
-        lead.extend(
-            [
-                ("SOURCE", "source", False),
-                ("PROJECT", "project", False),
-                ("FEATURE", "feature", False),
-                ("TITLE", "title", False),
-            ]
-        )
-    else:
-        lead.extend(
-            [
-                ("SOURCE", "source", False),
-                ("PROJECT", "project", False),
-                ("FEATURE", "feature", False),
-            ]
-        )
+    lead_by_group: dict[str, list[tuple[str, str, bool]]] = {
+        "none": [("SOURCE", "source", False)],
+        "project": [("SOURCE", "source", False), ("PROJECT", "project", False)],
+        "model": [("MODEL", "model", False), ("SOURCE", "source", False)],
+        "source": [("SOURCE", "source", False)],
+        "conversation": [
+            ("SOURCE", "source", False),
+            ("PROJECT", "project", False),
+            ("FEATURE", "feature", False),
+            ("TITLE", "title", False),
+        ],
+    }
+    default_lead = [
+        ("SOURCE", "source", False),
+        ("PROJECT", "project", False),
+        ("FEATURE", "feature", False),
+    ]
+    lead.extend(lead_by_group.get(group_by, default_lead))
 
     tail: list[tuple[str, str, bool]] = [
         ("CONVS", "convs", True),
@@ -126,45 +120,58 @@ def _bucket_display_cells(bucket: AggregatedBucket, *, is_total: bool = False) -
     }
 
 
+def _format_aligned_row(
+    cells: dict[str, str],
+    cols: list[tuple[str, str, bool]],
+    widths: list[int],
+) -> str:
+    """Pad `cells` according to column widths and alignment flags."""
+    parts = [
+        cells[key].rjust(widths[i]) if right else cells[key].ljust(widths[i])
+        for i, (_, key, right) in enumerate(cols)
+    ]
+    return "  ".join(parts)
+
+
+def _compute_column_widths(
+    cols: list[tuple[str, str, bool]],
+    row_dicts: list[dict[str, str]],
+    total_dict: dict[str, str],
+) -> list[int]:
+    """Compute maximum display widths for each `(header, key, right_align)` column."""
+    widths: list[int] = []
+    for hdr, key, _ in cols:
+        width = max(len(hdr), len(total_dict[key]))
+        for row in row_dicts:
+            width = max(width, len(row[key]))
+        widths.append(width)
+    return widths
+
+
+def _paint_line(text: str, prefix: str, *, color: bool) -> str:
+    """Wrap `text` in `prefix` + `ANSI_RESET` when `color` is enabled."""
+    return f"{prefix}{text}{ANSI_RESET}" if color else text
+
+
 def render_table(report: ScanReport, *, color: bool = False) -> str:
     """Render `report` as an aligned terminal table respecting `80x24` ergonomics."""
     cols = _select_table_columns(report.group_by, report.period)
     row_dicts = [_bucket_display_cells(b) for b in report.buckets]
     total_dict = _bucket_display_cells(report.totals, is_total=True)
-
-    widths = [
-        max(len(hdr), len(total_dict[key]), *(len(r[key]) for r in row_dicts))
-        for hdr, key, _ in cols
-    ]
-
-    def fmt_row(cells: dict[str, str]) -> str:
-        parts = [
-            cells[key].rjust(widths[i]) if right else cells[key].ljust(widths[i])
-            for i, (_, key, right) in enumerate(cols)
-        ]
-        return "  ".join(parts)
-
-    header_row = "  ".join(
-        hdr.rjust(widths[i]) if right else hdr.ljust(widths[i])
-        for i, (hdr, _, right) in enumerate(cols)
-    )
+    widths = _compute_column_widths(cols, row_dicts, total_dict)
+    header_cells = {key: hdr for hdr, key, _ in cols}
+    header_row = _format_aligned_row(header_cells, cols, widths)
     rule = "  ".join("-" * w for w in widths)
 
-    lines: list[str] = []
-    if color:
-        lines.append(f"{ANSI_BOLD}{ANSI_CYAN}{header_row}{ANSI_RESET}")
-        lines.append(f"{ANSI_DIM}{rule}{ANSI_RESET}")
-    else:
-        lines.append(header_row)
-        lines.append(rule)
+    lines = [
+        _paint_line(header_row, f"{ANSI_BOLD}{ANSI_CYAN}", color=color),
+        _paint_line(rule, ANSI_DIM, color=color),
+    ]
     for cells in row_dicts:
-        lines.append(fmt_row(cells))
-    if color:
-        lines.append(f"{ANSI_DIM}{rule}{ANSI_RESET}")
-        lines.append(f"{ANSI_BOLD}{ANSI_GREEN}{fmt_row(total_dict)}{ANSI_RESET}")
-    else:
-        lines.append(rule)
-        lines.append(fmt_row(total_dict))
+        lines.append(_format_aligned_row(cells, cols, widths))
+    lines.append(_paint_line(rule, ANSI_DIM, color=color))
+    total_line = _format_aligned_row(total_dict, cols, widths)
+    lines.append(_paint_line(total_line, f"{ANSI_BOLD}{ANSI_GREEN}", color=color))
     return "\n".join(lines) + "\n"
 
 
@@ -222,7 +229,8 @@ def render_jsonl(report: ScanReport) -> str:
     row_schema = build_ledger_row_json_schema()
     lines: list[str] = []
     for bucket in report.buckets:
-        row = bucket.to_dict()
+        full_dict = bucket.to_dict()
+        row = {col: full_dict[col] for col in CSV_COLUMN_ORDER}
         try:
             jsonschema.validate(instance=row, schema=row_schema)
         except jsonschema.ValidationError as exc:
@@ -241,6 +249,18 @@ def render_conversation_query_json(payload: dict[str, object]) -> str:
     except jsonschema.ValidationError as exc:
         record_schema_validation(fmt="json", direction="export", outcome="error")
         raise ValueError(f"Conversation JSON failed schema validation: {exc.message}") from exc
+    record_schema_validation(fmt="json", direction="export", outcome="ok")
+    return json.dumps(payload, indent=2) + "\n"
+
+
+def render_task_usage_json(payload: dict[str, object]) -> str:
+    """Validate a task spend dictionary against `task-usage.schema.json` and format as JSON."""
+    schema = build_task_usage_json_schema()
+    try:
+        jsonschema.validate(instance=payload, schema=schema)
+    except jsonschema.ValidationError as exc:
+        record_schema_validation(fmt="json", direction="export", outcome="error")
+        raise ValueError(f"Task usage JSON failed schema validation: {exc.message}") from exc
     record_schema_validation(fmt="json", direction="export", outcome="ok")
     return json.dumps(payload, indent=2) + "\n"
 

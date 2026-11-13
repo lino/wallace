@@ -9,11 +9,14 @@ wallace \- forensic token usage and USD cost auditor for Antigravity IDE and CLI
 [\fBsummary\fR|\fBprojects\fR|\fBfeatures\fR|\fBconversations\fR|\fBmodels\fR|\fBsources\fR|\fBdaily\fR|\fBweekly\fR|\fBmonthly\fR|\fBinterval\fR]
 [\fIOPTIONS\fR]
 .br
+.B wallace task
+\fITASK_ID\fR [\fB\-\-project\fR \fISLUG\fR] [\fB\-\-conversation\fR \fIUUID\fR]... [\fB\-\-include\-qa\fR] [\fB\-\-format\fR \fBtable\fR|\fBjson\fR] [\fB\-\-output\fR \fIPATH\fR]
+.br
 .B wallace conversation show
-\fICONVERSATION_ID\fR [\fB\-\-turns\fR] [\fB\-\-format\fR \fBjson\fR|\fBtable\fR]
+\fICONVERSATION_ID\fR [\fB\-\-turns\fR] [\fB\-\-output\fR \fIPATH\fR]
 .br
 .B wallace query
-\fICONVERSATION_ID\fR [\fB\-\-turns\fR]
+\fICONVERSATION_ID\fR [\fB\-\-turns\fR] [\fB\-\-output\fR \fIPATH\fR]
 .br
 .B wallace visidata
 [\fBopen\fR|\fBconfig\fR|\fBinstall\fR] [\fIOPTIONS\fR]
@@ -26,14 +29,17 @@ wallace \- forensic token usage and USD cost auditor for Antigravity IDE and CLI
 .br
 .B wallace schema
 [\fB\-\-list\fR | \fINAME\fR] [\fB\-\-format\fR \fBjson\-schema\fR|\fBcsvw\fR] [\fB\-\-output\fR \fIPATH\fR]
+.br
+.B wallace install
+[\fB\-\-bin\-dir\fR \fIDIR\fR]
 .SH DESCRIPTION
 Named after Oscar Wallace, the Treasury accountant who followed the ledger in
 \fIThe Untouchables\fR, \fBwallace\fR audits Antigravity IDE
 (\fI~/.gemini/antigravity\fR) and Antigravity CLI (\fI~/.gemini/antigravity-cli\fR)
-brain directories. It aggregates uncached input, cached input, thinking, and
-output tokens alongside estimated USD spend across timeframes (\fBday\fR,
-\fBweek\fR, \fBmonth\fR, or custom \fBinterval\fR), projects, features / Work
-Packages, conversations, and models.
+brain directories. It resolves canonical \fI<PROJECT>\-WP\-<NN>\fR identifiers
+from git branches, worker names, titles, and initial prompt briefs, and
+aggregates uncached input, cached input, thinking, and output tokens alongside
+estimated USD spend across timeframes, projects, tasks, conversations, and models.
 .PP
 \fBwallace\fR integrates directly with \fBVisiData\fR (\fBvd\fR) via flat typed
 JSONL streams, TSV/CSV tables, multi-sheet SQLite ledgers, and an installable
@@ -45,6 +51,12 @@ frequency shortcuts.
 Aggregate token usage and USD spend across projects, features, and timeframes.
 Combine any report verb with \fB\-\-period day|week|month|interval\fR and
 \fB\-\-interval\fR (for example \fB6h\fR, \fB7d\fR, \fB14d\fR).
+.TP
+.B task \fITASK_ID\fR
+Aggregate all conversations matching \fITASK_ID\fR (including project-scoped
+bare \fIWP\-NN\fR fallbacks, explicit \fB\-\-conversation\fR UUIDs, and optional
+prorated QA attribution via \fB\-\-include\-qa\fR) as an aligned table or
+Draft 2020-12 JSON (\fItask\-usage.schema.json\fR).
 .TP
 .B conversation show \fIID\fR / query \fIID\fR
 Query a single conversation UUID (or unambiguous prefix) and return self,
@@ -61,7 +73,12 @@ Print active configuration or write an editable default TOML pricing config.
 Emit Prometheus exposition metrics or run an HTTP \fI/metrics\fR exporter.
 .TP
 .B schema
-List or emit JSON Schema Draft 2020-12 and W3C CSVW data-interchange contracts.
+List or emit JSON Schema Draft 2020-12 and W3C CSVW data-interchange contracts
+(\fBtoken\-report\fR, \fBledger\-row\fR, \fBconversation\-usage\fR, and \fBtask\-usage\fR).
+.TP
+.B install
+Install an executable \fBwallace\fR launcher shim into \fB\-\-bin\-dir\fR or
+\fI${WALLACE_BIN_DIR:\-~/.local/bin}/wallace\fR.
 .SH ENVIRONMENT
 .TP
 .B WALLACE_CONFIG
@@ -69,6 +86,9 @@ Path to TOML configuration file (default: \fI~/.config/wallace/config.toml\fR).
 .TP
 .B WALLACE_IDE_DIR, WALLACE_CLI_DIR, WALLACE_BRAIN_DIRS
 Override Antigravity IDE, CLI, and standalone brain directories.
+.TP
+.B WALLACE_BIN_DIR
+Override target directory for \fBwallace install\fR (default: \fI~/.local/bin\fR).
 .TP
 .B WALLACE_METRICS_HOST, WALLACE_METRICS_PORT
 Override bind address and TCP port for \fBwallace metrics serve\fR.

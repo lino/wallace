@@ -20,20 +20,13 @@ from wallace.protobuf import (
 )
 from wallace.resolver import (
     DraftConversation,
+    classify_conversation_role,
     dominant_model,
     resolve_feature,
     resolve_project,
     resolve_root_id,
 )
-
-# region Constants & Defaults
-
-_MODEL_SETTING_RE = re.compile(r"Model Selection`\s+from\s+[^\n]+?\s+to\s+([^\n.]+)", re.IGNORECASE)
-_FILE_URI_RE = re.compile(r"file://(/[A-Za-z0-9_./~%-]+)")
-_CREATED_AT_FAST_RE = re.compile(r'"created_at"\s*:\s*"([^"]+)"')
-
-# endregion
-
+from wallace.transcript_reader import TranscriptExtract, read_transcript
 
 # region Data Models
 
@@ -97,7 +90,16 @@ def _parse_json_str_list(raw: str) -> list[str]:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
         return []
-    return [str(item) for item in parsed if str(item).strip()] if isinstance(parsed, list) else []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed if str(item).strip()]
+
+
+def _has_gen_tokens(decoded: RawGenTurn | None) -> bool:
+    """Return `True` when `decoded` carries non-zero prompt, cache, or output tokens."""
+    if decoded is None:
+        return False
+    return bool(decoded.input_tokens or decoded.output_tokens or decoded.cache_read_tokens)
 
 
 def _read_conv_sqlite(conv_db: Path) -> tuple[list[RawGenTurn], RawTrajectoryMeta]:
@@ -111,101 +113,16 @@ def _read_conv_sqlite(conv_db: Path) -> tuple[list[RawGenTurn], RawTrajectoryMet
         for (blob,) in conn.execute("SELECT data FROM gen_metadata ORDER BY idx ASC"):
             if isinstance(blob, bytes):
                 decoded = extract_gen_metadata(blob)
-                if decoded is not None and (
-                    decoded.input_tokens or decoded.output_tokens or decoded.cache_read_tokens
-                ):
+                if _has_gen_tokens(decoded) and decoded is not None:
                     turns.append(decoded)
         row = conn.execute("SELECT data FROM trajectory_metadata_blob LIMIT 1").fetchone()
         if row and isinstance(row[0], bytes):
             traj = extract_trajectory_metadata(row[0])
     except sqlite3.Error:
-        pass
+        return turns, traj
     finally:
         conn.close()
     return turns, traj
-
-
-def _read_turn_timestamps_fast(transcript_path: Path) -> tuple[list[str], str, str]:
-    """Extract turn `created_at` timestamps without full JSON decoding when SQLite exists."""
-    if not transcript_path.is_file():
-        return [], "", ""
-    turn_ts: list[str] = []
-    first_ts = ""
-    last_ts = ""
-    with transcript_path.open("r", encoding="utf-8", errors="replace") as handle:
-        for raw_line in handle:
-            if '"created_at"' in raw_line:
-                m = _CREATED_AT_FAST_RE.search(raw_line)
-                if m:
-                    ts = m.group(1)
-                    first_ts = first_ts or ts
-                    last_ts = ts
-                    if '"input_tokens"' in raw_line or '"output_tokens"' in raw_line:
-                        turn_ts.append(ts)
-    return turn_ts, first_ts, last_ts
-
-
-def _read_transcript_full(
-    transcript_path: Path,
-) -> tuple[list[tuple[int, int, int, str]], str, list[str], str, str]:
-    """Parse standalone `transcript.jsonl` into `(token_rows, model_hint, uris, start, end)`."""
-    if not transcript_path.is_file():
-        return [], "unknown", [], "", ""
-    token_rows: list[tuple[int, int, int, str]] = []
-    model_hint = "unknown"
-    discovered_uris: list[str] = []
-    first_ts = ""
-    last_ts = ""
-
-    with transcript_path.open("r", encoding="utf-8", errors="replace") as handle:
-        for raw_line in handle:
-            line = raw_line.strip()
-            if not line:
-                continue
-            try:
-                step = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(step, dict):
-                continue
-            created = str(step.get("created_at", "")).strip()
-            if created:
-                first_ts = first_ts or created
-                last_ts = created
-            model_hint = _update_transcript_hints(
-                str(step.get("content", "")), model_hint, discovered_uris
-            )
-            if "input_tokens" in step or "output_tokens" in step:
-                token_rows.append(
-                    (
-                        int(step.get("input_tokens", 0) or 0),
-                        int(step.get("cache_read_tokens", 0) or 0),
-                        int(step.get("output_tokens", 0) or 0),
-                        created,
-                    )
-                )
-    return token_rows, model_hint, discovered_uris, first_ts, last_ts
-
-
-def _update_transcript_hints(content: str, current_model: str, uris: list[str]) -> str:
-    """Extract model settings changes and `file://` workspace hints from step text."""
-    if not content:
-        return current_model
-    model_match = _MODEL_SETTING_RE.search(content)
-    if model_match:
-        current_model = normalize_model_name(model_match.group(1))
-    if len(uris) < 5 and "file://" in content:
-        for uri_match in _FILE_URI_RE.finditer(content):
-            uri = f"file://{uri_match.group(1)}"
-            if "/.gemini/" not in uri and uri not in uris:
-                uris.append(uri)
-    return current_model
-
-
-# endregion
-
-
-# region Scanner Entrypoints
 
 
 def _build_turns_from_sqlite(
@@ -240,6 +157,133 @@ def _build_turns_from_sqlite(
     return built
 
 
+def _load_turns_for_draft(
+    transcript_path: Path,
+    gen_turns: list[RawGenTurn],
+    summary_ts: str,
+    config: AppConfig,
+) -> tuple[list[TurnUsage], TranscriptExtract, str, str]:
+    """Build `(turns, transcript_extract, started_at, last_ts)` from SQLite or transcript."""
+    extract = read_transcript(transcript_path, collect_token_rows=(not gen_turns))
+    first_ts = extract.first_ts or summary_ts
+    last_ts = extract.last_ts or summary_ts
+    if gen_turns:
+        turns = _build_turns_from_sqlite(gen_turns, extract.turn_timestamps, last_ts, config)
+        return turns, extract, first_ts, last_ts
+
+    turns = [
+        TurnUsage(
+            model=extract.model_hint,
+            input_tokens=inp,
+            cached_input_tokens=cached,
+            output_tokens=out,
+            cost_usd=calculate_turn_cost(
+                model=extract.model_hint,
+                input_tokens=inp,
+                cached_input_tokens=cached,
+                output_tokens=out,
+                pricing_table=config.pricing,
+            ),
+            created_at=ts or summary_ts,
+        )
+        for inp, cached, out, ts in extract.token_rows
+    ]
+    return turns, extract, first_ts, last_ts
+
+
+def _read_app_sidecars(
+    app_root: Path | None,
+    conv_id: str,
+    has_summary_title: bool,
+) -> tuple[list[RawGenTurn], RawTrajectoryMeta, str]:
+    """Load `(gen_turns, trajectory_meta, pbtxt_title)` when `app_root` is present."""
+    if app_root is None:
+        return [], RawTrajectoryMeta(), ""
+    gen_turns, traj = _read_conv_sqlite(app_root / "conversations" / f"{conv_id}.db")
+    ann_file = app_root / "annotations" / f"{conv_id}.pbtxt"
+    ann_title = ""
+    if ann_file.is_file() and not has_summary_title:
+        ann_title = extract_pbtxt_title(ann_file.read_text(encoding="utf-8", errors="ignore"))
+    return gen_turns, traj, ann_title
+
+
+# endregion
+
+
+# region Project & Feature Resolution
+
+
+def _dedup_nonempty(items: list[str]) -> list[str]:
+    """Deduplicate non-empty strings while preserving first-seen order."""
+    seen: dict[str, None] = {}
+    for item in items:
+        if item:
+            seen.setdefault(item, None)
+    return list(seen.keys())
+
+
+def _resolve_cascade_links(
+    summary: _SummaryEntry | None,
+    gen_turns: list[RawGenTurn],
+) -> tuple[str, str]:
+    """Extract `(parent_id, root_id)` from `summary` and first `gen_turns` attributes."""
+    parent_id = summary.parent_id if summary else ""
+    root_id = ""
+    if gen_turns:
+        attrs = gen_turns[0].attributes
+        parent_id = parent_id or attrs.get("parent_cascade_id", "")
+        root_id = attrs.get("root_cascade_id", "")
+    return parent_id, root_id
+
+
+def _build_draft_conversation(
+    *,
+    conv_id: str,
+    conv_brain_dir: Path,
+    app_root: Path | None,
+    source_label: str,
+    summary: _SummaryEntry | None,
+    config: AppConfig,
+) -> DraftConversation | None:
+    """Assemble a `DraftConversation` for a single `<brain>/<conv_id>` directory."""
+    transcript_path = conv_brain_dir / ".system_generated" / "logs" / "transcript.jsonl"
+    summary_title = summary.title if summary else ""
+    gen_turns, traj, ann_title = _read_app_sidecars(app_root, conv_id, bool(summary_title))
+    summary_ts = summary.last_modified if summary else ""
+    turns, extract, started_at, last_ts = _load_turns_for_draft(
+        transcript_path, gen_turns, summary_ts, config
+    )
+    if not turns and summary is None:
+        return None
+
+    uris = _dedup_nonempty(
+        [*(summary.workspace_uris if summary else []), *traj.workspace_uris, *extract.uris]
+    )
+    parent_id, root_id = _resolve_cascade_links(summary, gen_turns)
+    return DraftConversation(
+        conversation_id=conv_id,
+        source=source_label,
+        title=summary_title or ann_title,
+        workspace_uris=uris,
+        repo_slug=traj.repo_slug,
+        git_branch=traj.git_branch,
+        agent_name=summary.agent_name if summary else "",
+        parent_id=parent_id,
+        root_id=root_id,
+        started_at=started_at,
+        last_timestamp=last_ts,
+        initial_prompt=extract.initial_prompt,
+        prompt_markers=tuple(extract.prompt_markers),
+        turns=turns,
+    )
+
+
+# endregion
+
+
+# region Scanner Entrypoints
+
+
 def _scan_single_root(
     root_path: Path,
     source_label: str,
@@ -248,9 +292,10 @@ def _scan_single_root(
     """Scan either an Antigravity app-data root or a direct `brain/` folder."""
     if not root_path.is_dir():
         return {}
-    app_root = root_path if (root_path / "brain").is_dir() else None
-    brain_dir = (root_path / "brain") if app_root is not None else root_path
-    summaries = _load_summaries_map(app_root) if app_root else {}
+    has_brain = (root_path / "brain").is_dir()
+    app_root = root_path if has_brain else None
+    brain_dir = (root_path / "brain") if has_brain else root_path
+    summaries = _load_summaries_map(app_root) if app_root is not None else {}
     drafts: dict[str, DraftConversation] = {}
 
     for entry in sorted(brain_dir.iterdir()):
@@ -266,96 +311,6 @@ def _scan_single_root(
             if draft is not None:
                 drafts[entry.name] = draft
     return drafts
-
-
-def _load_turns_for_draft(
-    transcript_path: Path,
-    gen_turns: list[RawGenTurn],
-    summary_ts: str,
-    config: AppConfig,
-) -> tuple[list[TurnUsage], list[str], str, str]:
-    """Build `(turns, transcript_uris, started_at, last_ts)` from SQLite or transcript."""
-    if gen_turns:
-        turn_ts, first_ts, last_ts = _read_turn_timestamps_fast(transcript_path)
-        turns = _build_turns_from_sqlite(gen_turns, turn_ts, last_ts or summary_ts, config)
-        return turns, [], first_ts or summary_ts, last_ts or summary_ts
-
-    token_rows, model_hint, transcript_uris, first_ts, last_ts = _read_transcript_full(
-        transcript_path
-    )
-    turns = [
-        TurnUsage(
-            model=model_hint,
-            input_tokens=inp,
-            cached_input_tokens=cached,
-            output_tokens=out,
-            cost_usd=calculate_turn_cost(
-                model=model_hint,
-                input_tokens=inp,
-                cached_input_tokens=cached,
-                output_tokens=out,
-                pricing_table=config.pricing,
-            ),
-            created_at=ts or summary_ts,
-        )
-        for inp, cached, out, ts in token_rows
-    ]
-    return turns, transcript_uris, first_ts or summary_ts, last_ts or summary_ts
-
-
-def _build_draft_conversation(
-    *,
-    conv_id: str,
-    conv_brain_dir: Path,
-    app_root: Path | None,
-    source_label: str,
-    summary: _SummaryEntry | None,
-    config: AppConfig,
-) -> DraftConversation | None:
-    """Assemble a `DraftConversation` for a single `<brain>/<conv_id>` directory."""
-    transcript_path = conv_brain_dir / ".system_generated" / "logs" / "transcript.jsonl"
-    gen_turns: list[RawGenTurn] = []
-    traj = RawTrajectoryMeta()
-    ann_title = ""
-    if app_root is not None:
-        gen_turns, traj = _read_conv_sqlite(app_root / "conversations" / f"{conv_id}.db")
-        ann_file = app_root / "annotations" / f"{conv_id}.pbtxt"
-        if ann_file.is_file() and not (summary and summary.title):
-            ann_title = extract_pbtxt_title(ann_file.read_text(encoding="utf-8", errors="ignore"))
-
-    summary_ts = summary.last_modified if summary else ""
-    turns, transcript_uris, started_at, last_ts = _load_turns_for_draft(
-        transcript_path, gen_turns, summary_ts, config
-    )
-    if not turns and summary is None:
-        return None
-
-    raw_uris = [
-        *(summary.workspace_uris if summary else []),
-        *traj.workspace_uris,
-        *transcript_uris,
-    ]
-    uris = list(dict.fromkeys(u for u in raw_uris if u))
-    parent_id = summary.parent_id if summary else ""
-    root_id = ""
-    if gen_turns:
-        parent_id = parent_id or gen_turns[0].attributes.get("parent_cascade_id", "")
-        root_id = gen_turns[0].attributes.get("root_cascade_id", "")
-
-    return DraftConversation(
-        conversation_id=conv_id,
-        source=source_label,
-        title=(summary.title if summary and summary.title else "") or ann_title,
-        workspace_uris=uris,
-        repo_slug=traj.repo_slug,
-        git_branch=traj.git_branch,
-        agent_name=summary.agent_name if summary else "",
-        parent_id=parent_id,
-        root_id=root_id,
-        started_at=started_at,
-        last_timestamp=last_ts,
-        turns=turns,
-    )
 
 
 def scan_brains(config: AppConfig) -> list[ConversationRecord]:
@@ -388,10 +343,12 @@ def scan_brains(config: AppConfig) -> list[ConversationRecord]:
                 root_conversation_id=resolved_root_id,
                 agent_name=draft.agent_name,
                 git_branch=draft.git_branch,
+                role=classify_conversation_role(draft),
                 primary_model=dominant_model(draft.turns),
                 started_at=draft.started_at,
                 last_timestamp=draft.last_timestamp,
                 turns=draft.turns,
+                prompt_markers=draft.prompt_markers,
             )
         )
     records.sort(key=lambda r: (r.project, r.feature, r.conversation_id))

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 
-# region Constants & Defaults
-
-SCHEMA_NAMES: tuple[str, ...] = ("token-report", "ledger-row", "conversation-usage")
+SCHEMA_NAMES: tuple[str, ...] = (
+    "token-report",
+    "ledger-row",
+    "conversation-usage",
+    "task-usage",
+)
 CSV_COLUMN_ORDER: tuple[str, ...] = (
     "period",
     "period_start",
@@ -25,11 +28,25 @@ CSV_COLUMN_ORDER: tuple[str, ...] = (
     "total_tokens",
     "cost_usd",
 )
-
-# endregion
-
-
-# region Schema Definitions
+BUCKET_REQUIRED_FIELDS: tuple[str, ...] = (
+    "period",
+    "period_start",
+    "source",
+    "project",
+    "feature",
+    "conversation_id",
+    "conversation_ids",
+    "title",
+    "model",
+    "conversation_count",
+    "turn_count",
+    "input_tokens",
+    "cached_input_tokens",
+    "output_tokens",
+    "thinking_tokens",
+    "total_tokens",
+    "cost_usd",
+)
 
 
 def _str_prop(description: str, enum: list[str] | None = None) -> dict[str, object]:
@@ -45,13 +62,16 @@ def _nonneg_int(description: str, minimum: int = 0) -> dict[str, object]:
     return {"type": "integer", "minimum": minimum, "description": description}
 
 
-def _nonneg_num(description: str) -> dict[str, object]:
+def _nonneg_num(description: str, maximum: float | None = None) -> dict[str, object]:
     """Build a non-negative number JSON Schema property descriptor."""
-    return {"type": "number", "minimum": 0.0, "description": description}
+    prop: dict[str, object] = {"type": "number", "minimum": 0.0, "description": description}
+    if maximum is not None:
+        prop["maximum"] = maximum
+    return prop
 
 
-def _bucket_properties() -> dict[str, object]:
-    """Return JSON Schema property definitions shared by report buckets and JSONL rows."""
+def _ledger_row_properties() -> dict[str, object]:
+    """Return flat scalar JSON Schema properties for `jsonl` VisiData stream rows."""
     return {
         "period": _str_prop(
             "Timeframe bucket label (YYYY-MM-DD, YYYY-Www, YYYY-MM, interval, or '*')."
@@ -81,6 +101,21 @@ def _bucket_properties() -> dict[str, object]:
     }
 
 
+def _report_bucket_properties() -> dict[str, object]:
+    """Return JSON Schema property definitions for `token-report` buckets including UUIDs."""
+    props = _ledger_row_properties()
+    ordered: dict[str, object] = {}
+    for key, val in props.items():
+        ordered[key] = val
+        if key == "conversation_id":
+            ordered["conversation_ids"] = {
+                "type": "array",
+                "description": "Sorted distinct conversation UUIDs included in this bucket.",
+                "items": {"type": "string", "description": "Antigravity conversation UUID."},
+            }
+    return ordered
+
+
 def build_ledger_row_json_schema() -> dict[str, object]:
     """Build the JSON Schema Draft 2020-12 contract for single `jsonl` VisiData stream lines."""
     return {
@@ -94,7 +129,7 @@ def build_ledger_row_json_schema() -> dict[str, object]:
         "type": "object",
         "additionalProperties": False,
         "required": list(CSV_COLUMN_ORDER),
-        "properties": _bucket_properties(),
+        "properties": _ledger_row_properties(),
     }
 
 
@@ -138,8 +173,8 @@ def build_report_json_schema() -> dict[str, object]:
                 "type": "object",
                 "description": "Aggregated token usage and USD cost bucket.",
                 "additionalProperties": False,
-                "required": list(CSV_COLUMN_ORDER),
-                "properties": _bucket_properties(),
+                "required": list(BUCKET_REQUIRED_FIELDS),
+                "properties": _report_bucket_properties(),
             }
         },
     }
@@ -180,12 +215,16 @@ def _strict_array_of(description: str, item_props: dict[str, object]) -> dict[st
     }
 
 
-def _conversation_nested_arrays() -> dict[str, object]:
-    """Build `models`, `subagents`, and `turns` array schemas for conversation queries."""
-    model_props: dict[str, object] = {
+def _model_breakdown_item_props() -> dict[str, object]:
+    """Return property descriptors for per-model token and cost breakdown items."""
+    return {
         "model": _str_prop("Model identifier."),
         **_usage_totals_subschema()["properties"],  # type: ignore[dict-item]
     }
+
+
+def _conversation_nested_arrays() -> dict[str, object]:
+    """Build `models`, `subagents`, and `turns` array schemas for conversation queries."""
     sub_props: dict[str, object] = {
         "conversation_id": _str_prop("Subagent UUID."),
         "agent_name": _str_prop("Subagent role/preset."),
@@ -208,7 +247,8 @@ def _conversation_nested_arrays() -> dict[str, object]:
     }
     return {
         "models": _strict_array_of(
-            "Per-model token and cost breakdown across self and subagents.", model_props
+            "Per-model token and cost breakdown across self and subagents.",
+            _model_breakdown_item_props(),
         ),
         "subagents": _strict_array_of("Summary of descendant subagent conversations.", sub_props),
         "turns": _strict_array_of(
@@ -249,6 +289,61 @@ def build_conversation_usage_json_schema() -> dict[str, object]:
         "required": [k for k in root_props if k != "turns"],
         "properties": root_props,
     }
+
+
+def build_task_usage_json_schema() -> dict[str, object]:
+    """Build the JSON Schema Draft 2020-12 contract for `wallace task <TASK-ID> --format json`."""
+    conv_props: dict[str, object] = {
+        "conversation_id": _str_prop("Contributing conversation UUID."),
+        "source": _str_prop("Origin environment.", enum=["ide", "cli", "standalone"]),
+        "project": _str_prop("Resolved project slug."),
+        "feature": _str_prop("Resolved conversation feature or task identifier."),
+        "title": _str_prop("Conversation display title."),
+        "agent_name": _str_prop("Subagent preset or worker roster name."),
+        "role": _str_prop("Attributed worker role.", enum=["implementation", "qa"]),
+        "attribution_share": _nonneg_num(
+            "Fraction (0.0 to 1.0) of the conversation attributed to this task.", maximum=1.0
+        ),
+        **_usage_totals_subschema()["properties"],  # type: ignore[dict-item]
+    }
+    root_props: dict[str, object] = {
+        "task_id": _str_prop("Canonical uppercase Work Package or task identifier."),
+        "project": _str_prop("Resolved or requested project slug."),
+        "include_qa": _bool_prop("Whether QA conversations were included in totals."),
+        "conversation_count": _nonneg_int("Number of distinct conversations attributed."),
+        "conversation_ids": {
+            "type": "array",
+            "description": "Sorted distinct conversation UUIDs contributing to this task.",
+            "items": {"type": "string", "description": "Antigravity conversation UUID."},
+        },
+        **_usage_totals_subschema()["properties"],  # type: ignore[dict-item]
+        "models": _strict_array_of(
+            "Per-model token and USD cost breakdown across attributed conversations.",
+            _model_breakdown_item_props(),
+        ),
+        "conversations": _strict_array_of(
+            "Per-conversation breakdown distinguishing implementation and QA roles.",
+            conv_props,
+        ),
+    }
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://schemas.wallace.local/v1/task-usage.schema.json",
+        "title": "Wallace Task Token & Cost Spend Summary",
+        "description": (
+            "Aggregated token usage, turn count, USD cost, per-model breakdown, and "
+            "contributing conversations for a single Work Package or task identifier."
+        ),
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(root_props.keys()),
+        "properties": root_props,
+    }
+
+
+def _bool_prop(description: str) -> dict[str, object]:
+    """Build a boolean JSON Schema property descriptor."""
+    return {"type": "boolean", "description": description}
 
 
 def build_report_csvw_schema() -> dict[str, object]:
@@ -312,11 +407,9 @@ def render_schema_document(name: str, fmt: str = "json-schema") -> str:
             "token-report": build_report_json_schema,
             "ledger-row": build_ledger_row_json_schema,
             "conversation-usage": build_conversation_usage_json_schema,
+            "task-usage": build_task_usage_json_schema,
         }
         doc = builders[name]()
     else:
         raise KeyError(f"Unsupported schema format '{fmt}'. Choose 'json-schema' or 'csvw'.")
     return json.dumps(doc, indent=2) + "\n"
-
-
-# endregion

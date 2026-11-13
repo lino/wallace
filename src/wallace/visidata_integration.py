@@ -279,20 +279,18 @@ def launch_visidata_workbook(
     stdin_tty = bool(getattr(sys.stdin, "isatty", lambda: False)())
     stdout_tty = bool(getattr(sys.stdout, "isatty", lambda: False)())
     if not (stdin_tty and stdout_tty):
-        print(
+        sys.stderr.write(
             "Error: 'wallace visidata open' requires an interactive TTY terminal.\n"
-            "For pipelines, stream JSONL: 'wallace report features --format jsonl | vd -f jsonl'.",
-            file=sys.stderr,
+            "For pipelines, stream JSONL: 'wallace report features --format jsonl | vd -f jsonl'.\n"
         )
         return 1
 
     vd_bin = shutil.which("vd") or shutil.which("visidata")
     if not vd_bin:
-        print(
+        sys.stderr.write(
             "Error: VisiData ('vd') executable not found on PATH.\n"
             "Install VisiData ('brew install visidata' or 'uv tool install visidata') or export "
-            "a workbook via 'wallace report summary --format sqlite --output audit.sqlite'.",
-            file=sys.stderr,
+            "a workbook via 'wallace report summary --format sqlite --output audit.sqlite'.\n"
         )
         return 1
 

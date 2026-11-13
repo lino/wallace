@@ -6,6 +6,19 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
+class PromptMarker:
+    """Chronological prompt or board-assignment marker referencing task identifiers.
+
+    Attributes:
+        created_at: ISO-8601 timestamp recorded on the prompt or board step.
+        task_ids: Ordered distinct canonical `<PROJECT>-WP-<NN>` identifiers in this step.
+    """
+
+    created_at: str
+    task_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class TurnUsage:
     """Token and USD cost metrics for a single model generation turn.
 
@@ -61,10 +74,12 @@ class ConversationRecord:
         root_conversation_id: Top-level root conversation UUID in a subagent tree.
         agent_name: Optional subagent role or swarm worker name.
         git_branch: Optional git branch recorded in trajectory metadata.
+        role: Conversation role (`"implementation"` or `"qa"`).
         primary_model: Dominant model identifier by token volume.
         started_at: Earliest ISO-8601 timestamp observed for this conversation.
         last_timestamp: Latest ISO-8601 timestamp observed for this conversation.
         turns: Ordered sequence of `TurnUsage` records.
+        prompt_markers: Chronological prompt/board markers referencing task IDs.
     """
 
     conversation_id: str
@@ -76,10 +91,12 @@ class ConversationRecord:
     root_conversation_id: str = ""
     agent_name: str = ""
     git_branch: str = ""
+    role: str = "implementation"
     primary_model: str = "unknown"
     started_at: str = ""
     last_timestamp: str = ""
     turns: list[TurnUsage] = field(default_factory=list)
+    prompt_markers: tuple[PromptMarker, ...] = ()
 
     @property
     def input_tokens(self) -> int:
@@ -116,6 +133,15 @@ class ConversationRecord:
         """Return number of model generation turns in this conversation."""
         return len(self.turns)
 
+    @property
+    def referenced_tasks(self) -> tuple[str, ...]:
+        """Return ordered distinct `<PROJECT>-WP-<NN>` IDs across all `prompt_markers`."""
+        seen: dict[str, None] = {}
+        for marker in self.prompt_markers:
+            for tid in marker.task_ids:
+                seen.setdefault(tid, None)
+        return tuple(seen.keys())
+
 
 @dataclass(slots=True)
 class AggregatedBucket:
@@ -129,6 +155,7 @@ class AggregatedBucket:
         project: Project name (or `"*"` when grouped across projects).
         feature: Feature name (or `"*"` when grouped at project/model/period level).
         conversation_id: Conversation UUID when grouped by conversation, else `""`.
+        conversation_ids: Sorted distinct conversation UUIDs contributing to this bucket.
         title: Display title when grouped by conversation, else `""`.
         model: Model name (or `"mixed"` when multiple models contributed).
         conversation_count: Number of distinct conversations contributing to this bucket.
@@ -147,6 +174,7 @@ class AggregatedBucket:
     period: str = "*"
     period_start: str = ""
     conversation_id: str = ""
+    conversation_ids: list[str] = field(default_factory=list)
     title: str = ""
     model: str = "unknown"
     conversation_count: int = 0
@@ -171,6 +199,7 @@ class AggregatedBucket:
             "project": self.project,
             "feature": self.feature,
             "conversation_id": self.conversation_id,
+            "conversation_ids": list(self.conversation_ids),
             "title": self.title,
             "model": self.model,
             "conversation_count": self.conversation_count,

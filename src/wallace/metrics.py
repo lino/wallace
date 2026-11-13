@@ -155,9 +155,8 @@ def serve_metrics_http(config: AppConfig, *, refresh_seconds: float = 30.0) -> N
         registry
     )
     start_http_server(config.metrics_port, addr=config.metrics_host, registry=registry)
-    print(
-        f"Serving Prometheus metrics at http://{config.metrics_host}:{config.metrics_port}/metrics",
-        file=sys.stderr,
+    sys.stderr.write(
+        f"Serving Prometheus metrics at http://{config.metrics_host}:{config.metrics_port}/metrics\n"
     )
     while True:
         t0 = time.perf_counter()

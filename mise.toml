@@ -6,6 +6,10 @@ uv = "0.13.1"
 description = "Install locked project and development dependencies"
 run = "uv sync --locked --all-groups"
 
+[tasks.install]
+description = "Install executable wallace launcher shim into WALLACE_BIN_DIR or user local bin"
+run = "uv run wallace install"
+
 [tasks.fmt]
 description = "Format Python source and test files"
 run = "uv run ruff format src tests"
@@ -20,6 +24,10 @@ run = [
 [tasks.test]
 description = "Execute automated behavioural and schema contract test suites"
 run = "uv run pytest"
+
+[tasks.bench]
+description = "Execute scanner and rollup throughput smoke benchmark"
+run = "uv run pytest -q tests/test_scanner_and_pricing.py"
 
 [tasks.verify]
 description = "Run combined formatting check, lint, typecheck, and test gates"

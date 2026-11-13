@@ -10,8 +10,6 @@ from typing import NoReturn
 
 from wallace import __version__
 
-# region Constants & Defaults
-
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
@@ -28,6 +26,9 @@ KNOWN_FLAGS: tuple[str, ...] = (
     "--source",
     "--project",
     "--feature",
+    "--conversation",
+    "--include-qa",
+    "--bin-dir",
     "--period",
     "--interval",
     "--group-by",
@@ -57,20 +58,15 @@ REPORT_VERB_SPECS: dict[str, tuple[str, str]] = {
     "interval": ("feature", "interval"),
 }
 
-# endregion
-
-
-# region Argument Parsing
-
 
 class ActionableArgumentParser(argparse.ArgumentParser):
     """`ArgumentParser` subclass emitting actionable flag suggestions to `stderr`."""
 
     def error(self, message: str) -> NoReturn:
-        """Print an actionable error message with closest flag match and exit `2`."""
+        """Write an actionable error message with closest flag match and exit `2`."""
         hint = _suggest_unknown_flag(message)
         full_msg = f"Error: {message}. {hint}" if hint else f"Error: {message}"
-        print(f"{full_msg}\nRun '{self.prog} --help' for usage details.", file=sys.stderr)
+        sys.stderr.write(f"{full_msg}\nRun '{self.prog} --help' for usage details.\n")
         raise SystemExit(EXIT_USAGE)
 
 
@@ -86,6 +82,20 @@ def _suggest_unknown_flag(message: str) -> str:
             if matches:
                 return f"Did you mean '{matches[0]}'?"
     return ""
+
+
+def _add_dir_override_flags(parser: argparse.ArgumentParser, *, advanced_visible: bool) -> None:
+    """Attach optional `--ide-dir`, `--cli-dir`, and `--brain-dir` override flags."""
+    adv_help = None if advanced_visible else argparse.SUPPRESS
+    parser.add_argument("--ide-dir", type=Path, default=None, help=adv_help or "IDE root override.")
+    parser.add_argument("--cli-dir", type=Path, default=None, help=adv_help or "CLI root override.")
+    parser.add_argument(
+        "--brain-dir",
+        action="append",
+        type=Path,
+        default=[],
+        help=adv_help or "Additional standalone brain directory (repeatable).",
+    )
 
 
 def _add_common_filter_flags(parser: argparse.ArgumentParser, *, advanced_visible: bool) -> None:
@@ -109,15 +119,7 @@ def _add_common_filter_flags(parser: argparse.ArgumentParser, *, advanced_visibl
         default="",
         help=adv_help or "Include turns/conversations at or before ISO-8601 timestamp.",
     )
-    parser.add_argument("--ide-dir", type=Path, default=None, help=adv_help or "IDE root override.")
-    parser.add_argument("--cli-dir", type=Path, default=None, help=adv_help or "CLI root override.")
-    parser.add_argument(
-        "--brain-dir",
-        action="append",
-        type=Path,
-        default=[],
-        help=adv_help or "Additional standalone brain directory (repeatable).",
-    )
+    _add_dir_override_flags(parser, advanced_visible=advanced_visible)
 
 
 def _add_report_flags(
@@ -163,7 +165,6 @@ def _add_report_flags(
 
 def _attach_query_args(parser: argparse.ArgumentParser, *, advanced_visible: bool) -> None:
     """Attach arguments to `conversation show` / `query`."""
-    adv_help = None if advanced_visible else argparse.SUPPRESS
     parser.add_argument("conversation_id", help="Exact conversation UUID or unambiguous prefix.")
     parser.add_argument(
         "--turns",
@@ -171,15 +172,44 @@ def _attach_query_args(parser: argparse.ArgumentParser, *, advanced_visible: boo
         help="Include chronological turn-by-turn token and cost array in JSON output.",
     )
     parser.add_argument("--output", type=Path, default=None, help="Optional JSON output file.")
-    parser.add_argument("--ide-dir", type=Path, default=None, help=adv_help or "IDE root override.")
-    parser.add_argument("--cli-dir", type=Path, default=None, help=adv_help or "CLI root override.")
-    parser.add_argument(
-        "--brain-dir",
-        action="append",
-        type=Path,
-        default=[],
-        help=adv_help or "Additional standalone brain directory.",
+    _add_dir_override_flags(parser, advanced_visible=advanced_visible)
+
+
+def _register_task_subparser(
+    subparsers: argparse._SubParsersAction[ActionableArgumentParser],
+    *,
+    advanced_visible: bool,
+) -> None:
+    """Register `wallace task <TASK-ID>` subcommand and options."""
+    task_p = subparsers.add_parser(
+        "task",
+        help="Aggregate token usage and USD spend for a Work Package or task identifier.",
     )
+    task_p.add_argument("task_id", help="Task identifier (for example 'BETA-WP-07').")
+    task_p.add_argument(
+        "--project",
+        default="",
+        help="Optional project slug scoping bare 'WP-NN' fallback matches.",
+    )
+    task_p.add_argument(
+        "--conversation",
+        action="append",
+        default=[],
+        help="Additional conversation UUID or unambiguous prefix to attribute (repeatable).",
+    )
+    task_p.add_argument(
+        "--include-qa",
+        action="store_true",
+        help="Include dedicated and prorated multi-task QA conversations.",
+    )
+    task_p.add_argument(
+        "--format",
+        choices=("table", "json"),
+        default="table",
+        help="Output format ('table' or 'json').",
+    )
+    task_p.add_argument("--output", type=Path, default=None, help="Optional output file path.")
+    _add_dir_override_flags(task_p, advanced_visible=advanced_visible)
 
 
 def _register_conversation_and_visidata(
@@ -187,7 +217,7 @@ def _register_conversation_and_visidata(
     *,
     advanced_visible: bool,
 ) -> None:
-    """Register `conversation`, `query`, and `visidata` subcommands."""
+    """Register `conversation`, `query`, `task`, and `visidata` subcommands."""
     conv_p = subparsers.add_parser("conversation", help="Inspect a single conversation ledger.")
     conv_sub = conv_p.add_subparsers(dest="verb")
     show_p = conv_sub.add_parser("show", help="Return token and USD cost JSON for a conversation.")
@@ -197,6 +227,7 @@ def _register_conversation_and_visidata(
         "query", help="Query a conversation ID (or prefix) and return token/cost JSON."
     )
     _attach_query_args(query_p, advanced_visible=advanced_visible)
+    _register_task_subparser(subparsers, advanced_visible=advanced_visible)
 
     vd_p = subparsers.add_parser("visidata", help="VisiData (vd) exploration & plugin integration.")
     vd_sub = vd_p.add_subparsers(dest="verb")
@@ -227,7 +258,7 @@ def _register_conversation_and_visidata(
 def _register_admin_subparsers(
     subparsers: argparse._SubParsersAction[ActionableArgumentParser],
 ) -> None:
-    """Register `config`, `metrics`, and `schema` subcommands on `subparsers`."""
+    """Register `config`, `metrics`, `schema`, and `install` subcommands."""
     cfg_p = subparsers.add_parser("config", help="Inspect or initialize TOML configuration.")
     cfg_sub = cfg_p.add_subparsers(dest="verb")
     cfg_sub.add_parser("show", help="Print active TOML configuration to stdout.")
@@ -255,6 +286,17 @@ def _register_admin_subparsers(
     )
     sch_p.add_argument("--output", type=Path, default=None, help="Optional schema output file.")
 
+    inst_p = subparsers.add_parser(
+        "install",
+        help="Install executable wallace launcher shim into WALLACE_BIN_DIR or ~/.local/bin.",
+    )
+    inst_p.add_argument(
+        "--bin-dir",
+        type=Path,
+        default=None,
+        help="Target bin directory override (default: $WALLACE_BIN_DIR or ~/.local/bin).",
+    )
+
 
 def build_parser(*, advanced_visible: bool = False) -> argparse.ArgumentParser:
     """Construct the noun-verb CLI parser for `wallace`."""
@@ -262,7 +304,7 @@ def build_parser(*, advanced_visible: bool = False) -> argparse.ArgumentParser:
         prog="wallace",
         description=(
             "Oscar Wallace: Forensic token usage and USD cost auditor for Antigravity IDE and CLI "
-            "brain directories, with timeframe rollups and VisiData integration."
+            "brain directories, with timeframe rollups, task spend queries, and VisiData support."
         ),
     )
     parser.add_argument("--version", action="version", version=f"wallace {__version__}")
@@ -302,7 +344,7 @@ def build_parser(*, advanced_visible: bool = False) -> argparse.ArgumentParser:
 
 def render_shell_completions(shell: str) -> str:
     """Return a concise shell completion script for `bash`, `zsh`, or `fish`."""
-    nouns = "report conversation query visidata config metrics schema"
+    nouns = "report conversation query task visidata config metrics schema install"
     if shell == "fish":
         return f"complete -c wallace -f -n '__fish_use_subcommand' -a '{nouns}'\n"
     if shell == "zsh":
@@ -312,6 +354,3 @@ def render_shell_completions(shell: str) -> str:
             "compdef _wallace wallace\n"
         )
     return f'complete -W "{nouns} --help --help-all --version --config" wallace\n'
-
-
-# endregion

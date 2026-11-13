@@ -7,17 +7,6 @@ from collections.abc import Iterable
 from wallace.models import AggregatedBucket, ConversationRecord, ScanReport, TurnUsage
 from wallace.timeframes import VALID_PERIODS, bucket_timestamp
 
-# region Constants & Defaults
-
-VALID_GROUP_DIMENSIONS = frozenset(
-    {"none", "summary", "project", "feature", "conversation", "model", "source"}
-)
-
-# endregion
-
-
-# region Filtering & Rollup
-
 
 def filter_conversations(
     records: Iterable[ConversationRecord],
@@ -41,30 +30,50 @@ def filter_conversations(
             continue
         if feat_needle and feat_needle not in rec.feature.lower():
             continue
-        filtered_turns = _filter_turns_by_date(rec, since=since, until=until)
-        if not filtered_turns:
-            continue
-        if len(filtered_turns) == len(rec.turns):
-            filtered.append(rec)
-        else:
-            filtered.append(
-                ConversationRecord(
-                    conversation_id=rec.conversation_id,
-                    source=rec.source,
-                    project=rec.project,
-                    feature=rec.feature,
-                    title=rec.title,
-                    parent_conversation_id=rec.parent_conversation_id,
-                    root_conversation_id=rec.root_conversation_id,
-                    agent_name=rec.agent_name,
-                    git_branch=rec.git_branch,
-                    primary_model=rec.primary_model,
-                    started_at=filtered_turns[0].created_at or rec.started_at,
-                    last_timestamp=filtered_turns[-1].created_at or rec.last_timestamp,
-                    turns=filtered_turns,
-                )
-            )
+        sliced = _slice_record_by_date(rec, since=since, until=until)
+        if sliced is not None:
+            filtered.append(sliced)
     return filtered
+
+
+def _slice_record_by_date(
+    rec: ConversationRecord,
+    *,
+    since: str,
+    until: str,
+) -> ConversationRecord | None:
+    """Return `rec` with turns bounded by `[since, until]`, or `None` when empty."""
+    filtered_turns = _filter_turns_by_date(rec, since=since, until=until)
+    if not filtered_turns:
+        return None
+    if len(filtered_turns) == len(rec.turns):
+        return rec
+    return ConversationRecord(
+        conversation_id=rec.conversation_id,
+        source=rec.source,
+        project=rec.project,
+        feature=rec.feature,
+        title=rec.title,
+        parent_conversation_id=rec.parent_conversation_id,
+        root_conversation_id=rec.root_conversation_id,
+        agent_name=rec.agent_name,
+        git_branch=rec.git_branch,
+        role=rec.role,
+        primary_model=rec.primary_model,
+        started_at=filtered_turns[0].created_at or rec.started_at,
+        last_timestamp=filtered_turns[-1].created_at or rec.last_timestamp,
+        turns=filtered_turns,
+        prompt_markers=rec.prompt_markers,
+    )
+
+
+def _turn_within_bounds(ts: str, *, since: str, until: str) -> bool:
+    """Return `True` when `ts` falls inside optional `[since, until]` ISO bounds."""
+    if not ts:
+        return True
+    if since and ts < since:
+        return False
+    return not (until and ts > until)
 
 
 def _filter_turns_by_date(
@@ -76,15 +85,11 @@ def _filter_turns_by_date(
     """Filter a conversation's turns against optional `since` and `until` ISO bounds."""
     if not since and not until:
         return rec.turns
-    kept: list[TurnUsage] = []
-    for turn in rec.turns:
-        ts = turn.created_at or rec.last_timestamp
-        if since and ts and ts < since:
-            continue
-        if until and ts and ts > until:
-            continue
-        kept.append(turn)
-    return kept
+    return [
+        turn
+        for turn in rec.turns
+        if _turn_within_bounds(turn.created_at or rec.last_timestamp, since=since, until=until)
+    ]
 
 
 def _merge_label(existing: str, incoming: str) -> str:
@@ -94,6 +99,11 @@ def _merge_label(existing: str, incoming: str) -> str:
     if existing == incoming:
         return existing
     return "mixed"
+
+
+VALID_GROUP_DIMENSIONS = frozenset(
+    {"none", "summary", "project", "feature", "conversation", "model", "source"}
+)
 
 
 def _entity_identity(
@@ -115,7 +125,17 @@ def _entity_identity(
         return (turn.model, "*", "*", "", "", turn.model)
     if group_by in ("feature", "summary"):
         return (f"{rec.project}::{rec.feature}", rec.project, rec.feature, "", "", turn.model)
+    return _conversation_identity(rec, turn, include_subagents=include_subagents, by_id=by_id)
 
+
+def _conversation_identity(
+    rec: ConversationRecord,
+    turn: TurnUsage,
+    *,
+    include_subagents: bool,
+    by_id: dict[str, ConversationRecord],
+) -> tuple[str, str, str, str, str, str]:
+    """Compute conversation-level grouping tuple respecting `include_subagents`."""
     if not include_subagents and rec.root_conversation_id:
         root_id = rec.root_conversation_id
         root_rec = by_id.get(root_id)
@@ -130,6 +150,18 @@ def _entity_identity(
         rec.title,
         turn.model,
     )
+
+
+def _resolve_conv_entity_id(
+    rec: ConversationRecord,
+    *,
+    group_by: str,
+    include_subagents: bool,
+) -> str:
+    """Resolve the conversation UUID attributed to a bucket for `rec`."""
+    if group_by != "conversation" or include_subagents:
+        return rec.conversation_id
+    return rec.root_conversation_id or rec.conversation_id
 
 
 def _accumulate_turn(
@@ -182,6 +214,16 @@ def _accumulate_turn(
     bucket.cost_usd += turn.cost_usd
 
 
+def _validate_aggregation_args(group_by: str, period: str) -> None:
+    """Validate `group_by` and `period` arguments against supported enumerations."""
+    if group_by not in VALID_GROUP_DIMENSIONS:
+        raise ValueError(
+            f"Unsupported group_by '{group_by}'. Choose one of {sorted(VALID_GROUP_DIMENSIONS)}."
+        )
+    if period not in VALID_PERIODS:
+        raise ValueError(f"Unsupported period '{period}'. Choose one of {sorted(VALID_PERIODS)}.")
+
+
 def aggregate_report(
     records: Iterable[ConversationRecord],
     *,
@@ -191,23 +233,15 @@ def aggregate_report(
     include_subagents: bool = False,
 ) -> ScanReport:
     """Aggregate filtered conversations across timeframes and dimensions without double-counting."""
-    if group_by not in VALID_GROUP_DIMENSIONS:
-        raise ValueError(
-            f"Unsupported group_by '{group_by}'. Choose one of {sorted(VALID_GROUP_DIMENSIONS)}."
-        )
-    if period not in VALID_PERIODS:
-        raise ValueError(f"Unsupported period '{period}'. Choose one of {sorted(VALID_PERIODS)}.")
-
+    _validate_aggregation_args(group_by, period)
     items = list(records)
     by_id = {rec.conversation_id: rec for rec in items}
     buckets: dict[str, AggregatedBucket] = {}
     conv_sets: dict[str, set[str]] = {}
 
     for rec in items:
-        conv_entity_id = (
-            rec.root_conversation_id
-            if (group_by == "conversation" and not include_subagents and rec.root_conversation_id)
-            else rec.conversation_id
+        conv_entity_id = _resolve_conv_entity_id(
+            rec, group_by=group_by, include_subagents=include_subagents
         )
         for turn in rec.turns:
             _accumulate_turn(
@@ -224,7 +258,9 @@ def aggregate_report(
             )
 
     for key, bucket in buckets.items():
-        bucket.conversation_count = len(conv_sets[key])
+        sorted_ids = sorted(conv_sets[key])
+        bucket.conversation_ids = sorted_ids
+        bucket.conversation_count = len(sorted_ids)
 
     ordered = _sort_buckets(list(buckets.values()), period=period)
     return ScanReport(
@@ -261,7 +297,9 @@ def _compute_grand_totals(records: list[ConversationRecord]) -> AggregatedBucket
         feature="*",
         model="",
     )
+    seen_ids: set[str] = set()
     for rec in records:
+        seen_ids.add(rec.conversation_id)
         total.source = _merge_label(total.source, rec.source)
         total.model = _merge_label(total.model, rec.primary_model)
         total.conversation_count += 1
@@ -271,11 +309,7 @@ def _compute_grand_totals(records: list[ConversationRecord]) -> AggregatedBucket
         total.output_tokens += rec.output_tokens
         total.thinking_tokens += rec.thinking_tokens
         total.cost_usd += rec.cost_usd
-    if not total.source:
-        total.source = "none"
-    if not total.model:
-        total.model = "none"
+    total.conversation_ids = sorted(seen_ids)
+    total.source = total.source or "none"
+    total.model = total.model or "none"
     return total
-
-
-# endregion

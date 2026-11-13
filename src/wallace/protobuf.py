@@ -84,6 +84,34 @@ def decode_varint(buf: bytes, pos: int) -> tuple[int, int]:
     raise ValueError("Truncated protobuf varint.")
 
 
+def _decode_field_value(
+    buf: bytes,
+    pos: int,
+    end: int,
+    wire_type: int,
+) -> tuple[int | bytes | None, int] | None:
+    """Decode a single protobuf field payload starting at `pos`, or `None` if truncated."""
+    if wire_type == WIRE_VARINT:
+        try:
+            val, next_pos = decode_varint(buf, pos)
+        except ValueError:
+            return None
+        return val, next_pos
+    if wire_type == WIRE_LEN:
+        try:
+            size, next_pos = decode_varint(buf, pos)
+        except ValueError:
+            return None
+        if size < 0 or next_pos + size > end:
+            return None
+        return buf[next_pos : next_pos + size], next_pos + size
+    fixed_sizes = {WIRE_64BIT: 8, WIRE_32BIT: 4}
+    skip = fixed_sizes.get(wire_type)
+    if skip is not None and pos + skip <= end:
+        return None, pos + skip
+    return None
+
+
 def iter_fields(buf: bytes) -> list[tuple[int, int, int | bytes]]:
     """Iterate top-level protobuf fields in `buf`, returning `(field_num, wire_type, value)`."""
     pos = 0
@@ -94,29 +122,13 @@ def iter_fields(buf: bytes) -> list[tuple[int, int, int | bytes]]:
             tag, pos = decode_varint(buf, pos)
         except ValueError:
             break
-        field_num = tag >> 3
         wire_type = tag & 0x07
-        if wire_type == WIRE_VARINT:
-            try:
-                val, pos = decode_varint(buf, pos)
-            except ValueError:
-                break
-            fields.append((field_num, wire_type, val))
-        elif wire_type == WIRE_LEN:
-            try:
-                size, pos = decode_varint(buf, pos)
-            except ValueError:
-                break
-            if size < 0 or pos + size > end:
-                break
-            fields.append((field_num, wire_type, buf[pos : pos + size]))
-            pos += size
-        elif wire_type == WIRE_64BIT and pos + 8 <= end:
-            pos += 8
-        elif wire_type == WIRE_32BIT and pos + 4 <= end:
-            pos += 4
-        else:
+        decoded = _decode_field_value(buf, pos, end, wire_type)
+        if decoded is None:
             break
+        payload, pos = decoded
+        if payload is not None:
+            fields.append((tag >> 3, wire_type, payload))
     return fields
 
 
@@ -129,18 +141,22 @@ def iter_fields(buf: bytes) -> list[tuple[int, int, int | bytes]]:
 def _parse_usage_submessage(payload: bytes, target: RawGenTurn) -> None:
     """Populate token counters on `target` from `gen_metadata` submessage `1.4`."""
     for fnum, wtype, val in iter_fields(payload):
-        if wtype != WIRE_VARINT or not isinstance(val, int):
-            continue
-        if fnum == 2:
-            target.input_tokens = val
-        elif fnum == 3:
-            target.output_tokens = val
-        elif fnum == 4:
-            target.cache_write_tokens = val
-        elif fnum == 5:
-            target.cache_read_tokens = val
-        elif fnum == 9:
-            target.thinking_tokens = val
+        if wtype == WIRE_VARINT and isinstance(val, int):
+            _assign_usage_counter(target, fnum, val)
+
+
+def _assign_usage_counter(target: RawGenTurn, fnum: int, val: int) -> None:
+    """Assign a single varint counter `val` onto `target` by protobuf field number."""
+    if fnum == 2:
+        target.input_tokens = val
+    elif fnum == 3:
+        target.output_tokens = val
+    elif fnum == 4:
+        target.cache_write_tokens = val
+    elif fnum == 5:
+        target.cache_read_tokens = val
+    elif fnum == 9:
+        target.thinking_tokens = val
 
 
 def _parse_kv_entry(payload: bytes) -> tuple[str, str] | None:
@@ -157,6 +173,18 @@ def _parse_kv_entry(payload: bytes) -> tuple[str, str] | None:
     return (key, val) if key else None
 
 
+def _apply_gen_inner_field(turn: RawGenTurn, inner_num: int, inner_val: bytes) -> None:
+    """Apply one length-delimited inner field (`4`, `19`, or `20`) onto `turn`."""
+    if inner_num == 4:
+        _parse_usage_submessage(inner_val, turn)
+    elif inner_num == 19:
+        turn.model = inner_val.decode("utf-8", errors="ignore") or "unknown"
+    elif inner_num == 20:
+        kv = _parse_kv_entry(inner_val)
+        if kv is not None:
+            turn.attributes[kv[0]] = kv[1]
+
+
 def extract_gen_metadata(blob: bytes) -> RawGenTurn | None:
     """Decode one `gen_metadata` row blob into a `RawGenTurn`, if valid."""
     for fnum, wtype, outer in iter_fields(blob):
@@ -164,16 +192,8 @@ def extract_gen_metadata(blob: bytes) -> RawGenTurn | None:
             continue
         turn = RawGenTurn()
         for inner_num, inner_wt, inner_val in iter_fields(outer):
-            if inner_wt != WIRE_LEN or not isinstance(inner_val, bytes):
-                continue
-            if inner_num == 4:
-                _parse_usage_submessage(inner_val, turn)
-            elif inner_num == 19:
-                turn.model = inner_val.decode("utf-8", errors="ignore") or "unknown"
-            elif inner_num == 20:
-                kv = _parse_kv_entry(inner_val)
-                if kv is not None:
-                    turn.attributes[kv[0]] = kv[1]
+            if inner_wt == WIRE_LEN and isinstance(inner_val, bytes):
+                _apply_gen_inner_field(turn, inner_num, inner_val)
         return turn
     return None
 

@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.wallace.local/v1/task-usage.schema.json",
+  "title": "Wallace Task Token & Cost Spend Summary",
+  "description": "Aggregated token usage, turn count, USD cost, per-model breakdown, and contributing conversations for a single Work Package or task identifier.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "project",
+    "include_qa",
+    "conversation_count",
+    "conversation_ids",
+    "turn_count",
+    "input_tokens",
+    "cached_input_tokens",
+    "output_tokens",
+    "thinking_tokens",
+    "total_tokens",
+    "cost_usd",
+    "models",
+    "conversations"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "description": "Canonical uppercase Work Package or task identifier."
+    },
+    "project": {
+      "type": "string",
+      "description": "Resolved or requested project slug."
+    },
+    "include_qa": {
+      "type": "boolean",
+      "description": "Whether QA conversations were included in totals."
+    },
+    "conversation_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of distinct conversations attributed."
+    },
+    "conversation_ids": {
+      "type": "array",
+      "description": "Sorted distinct conversation UUIDs contributing to this task.",
+      "items": {
+        "type": "string",
+        "description": "Antigravity conversation UUID."
+      }
+    },
+    "turn_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Turn count."
+    },
+    "input_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Uncached input tokens."
+    },
+    "cached_input_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cache-read input tokens."
+    },
+    "output_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Output tokens."
+    },
+    "thinking_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Thinking tokens."
+    },
+    "total_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total tokens."
+    },
+    "cost_usd": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Estimated USD cost."
+    },
+    "models": {
+      "type": "array",
+      "description": "Per-model token and USD cost breakdown across attributed conversations.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model",
+          "turn_count",
+          "input_tokens",
+          "cached_input_tokens",
+          "output_tokens",
+          "thinking_tokens",
+          "total_tokens",
+          "cost_usd"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model identifier."
+          },
+          "turn_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Turn count."
+          },
+          "input_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Uncached input tokens."
+          },
+          "cached_input_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Cache-read input tokens."
+          },
+          "output_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Output tokens."
+          },
+          "thinking_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Thinking tokens."
+          },
+          "total_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total tokens."
+          },
+          "cost_usd": {
+            "type": "number",
+            "minimum": 0.0,
+            "description": "Estimated USD cost."
+          }
+        }
+      }
+    },
+    "conversations": {
+      "type": "array",
+      "description": "Per-conversation breakdown distinguishing implementation and QA roles.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversation_id",
+          "source",
+          "project",
+          "feature",
+          "title",
+          "agent_name",
+          "role",
+          "attribution_share",
+          "turn_count",
+          "input_tokens",
+          "cached_input_tokens",
+          "output_tokens",
+          "thinking_tokens",
+          "total_tokens",
+          "cost_usd"
+        ],
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Contributing conversation UUID."
+          },
+          "source": {
+            "type": "string",
+            "description": "Origin environment.",
+            "enum": [
+              "ide",
+              "cli",
+              "standalone"
+            ]
+          },
+          "project": {
+            "type": "string",
+            "description": "Resolved project slug."
+          },
+          "feature": {
+            "type": "string",
+            "description": "Resolved conversation feature or task identifier."
+          },
+          "title": {
+            "type": "string",
+            "description": "Conversation display title."
+          },
+          "agent_name": {
+            "type": "string",
+            "description": "Subagent preset or worker roster name."
+          },
+          "role": {
+            "type": "string",
+            "description": "Attributed worker role.",
+            "enum": [
+              "implementation",
+              "qa"
+            ]
+          },
+          "attribution_share": {
+            "type": "number",
+            "minimum": 0.0,
+            "description": "Fraction (0.0 to 1.0) of the conversation attributed to this task.",
+            "maximum": 1.0
+          },
+          "turn_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Turn count."
+          },
+          "input_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Uncached input tokens."
+          },
+          "cached_input_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Cache-read input tokens."
+          },
+          "output_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Output tokens."
+          },
+          "thinking_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Thinking tokens."
+          },
+          "total_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total tokens."
+          },
+          "cost_usd": {
+            "type": "number",
+            "minimum": 0.0,
+            "description": "Estimated USD cost."
+          }
+        }
+      }
+    }
+  }
+}

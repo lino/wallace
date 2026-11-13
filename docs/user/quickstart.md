@@ -4,7 +4,7 @@
 
 **What you will learn:**
 
-- How to install `wallace` with `mise` and `uv`.
+- How to install `wallace` with `mise` and `uv` and place a launcher on `PATH`.
 - How to aggregate token usage and USD cost by project, feature, and model.
 - How to customize per-million-token model pricing in a Configuration File.
 
@@ -18,25 +18,27 @@ Tracking token spend manually across hundreds of conversation folders wastes tim
 ## Steps
 
 1. Install locked dependencies from the repository root (`mise run setup`).
-2. Run `uv run wallace` to print the default project and feature spend table.
-3. Run `uv run wallace report projects` to view totals grouped strictly by project.
-4. Run `uv run wallace report models` to compare spend across Gemini and Claude models.
-5. Generate an editable pricing configuration (`uv run wallace config init --output ~/.config/wallace/config.toml`).
+1. Install the global `wallace` launcher into `~/.local/bin` (`mise run install` or `uv run wallace install`).
+1. Run `wallace` to print the default project and feature spend table.
+1. Run `wallace report projects` to view totals grouped strictly by project.
+1. Run `wallace report models` to compare spend across Gemini and Claude models.
+1. Generate an editable pricing configuration (`wallace config init --output ~/.config/wallace/config.toml`).
 
 ## Expected Outcome
 
-`wallace` prints an aligned ledger table to `stdout` listing uncached input tokens, cached input tokens, output tokens, total tokens, and USD cost with a grand-total footer row.
+`wallace` prints an aligned ledger table to `stdout` with a grand-total footer row. Each row lists uncached input, cached input, output, total tokens, and USD cost.
 
 ## Power-User & Scripting Options
 
+- Override the launcher installation target via `--bin-dir <DIR>` or `WALLACE_BIN_DIR`.
 - Filter by origin environment with `--source ide` or `--source cli`.
-- Filter by project or feature substring with `--project org-tools` or `--feature WP-40`.
+- Filter by project or feature substring with `--project org-tools` or `--feature BETA-WP-07`.
 - Override directories via environment variables (`WALLACE_IDE_DIR`, `WALLACE_CLI_DIR`, `WALLACE_BRAIN_DIRS`) or `--help-all` flags.
 - Generate shell completions (`wallace --completions zsh`).
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-| --- | --- | --- |
-| `TOTAL 0` rows in output | Default `~/.gemini` paths do not contain brains | Pass `--ide-dir` / `--cli-dir` or set `WALLACE_BRAIN_DIRS` |
-| `Configuration file already exists` | `config init` protects existing TOML files | Pass `--force` to overwrite the target file intentionally |
+| Symptom                             | Cause                                           | Fix                                                        |
+| ----------------------------------- | ----------------------------------------------- | ---------------------------------------------------------- |
+| `TOTAL 0` rows in output            | Default `~/.gemini` paths do not contain brains | Pass `--ide-dir` / `--cli-dir` or set `WALLACE_BRAIN_DIRS` |
+| `Configuration file already exists` | `config init` protects existing TOML files      | Pass `--force` to overwrite the target file intentionally  |
