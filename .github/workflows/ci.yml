@@ -35,7 +35,7 @@ jobs:
       - name: Run CLI and schema smoke checks
         run: |
           uv run wallace --version
-          uv run wallace schema list
+          uv run wallace schema --list
           uv run wallace --completions zsh >/dev/null
 
   docs:

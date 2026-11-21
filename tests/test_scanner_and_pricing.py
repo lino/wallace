@@ -140,6 +140,7 @@ def test_pricing_exact_and_family_fallback(sample_env: dict[str, Path]) -> None:
             "WALLACE_IDE_DIR": str(sample_env["ide"]),
             "WALLACE_CLI_DIR": str(sample_env["cli"]),
             "WALLACE_CLAUDE_DIR": "",
+            "WALLACE_CODEX_DIR": "",
             "WALLACE_GROK_DIR": "",
         },
     )

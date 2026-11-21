@@ -5,12 +5,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from wallace.cli import main
 from wallace.config import load_config
 from wallace.scanner import scan_brains
 
 
-def test_codex_report_and_transcript(tmp_path: Path, capsys, monkeypatch) -> None:
+def test_codex_report_and_transcript(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Count each generation once when a rollout contains both token formats."""
     monkeypatch.setenv("WALLACE_IDE_DIR", "")
     monkeypatch.setenv("WALLACE_CLI_DIR", "")
