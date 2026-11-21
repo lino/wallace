@@ -38,6 +38,12 @@ jobs:
           uv run wallace schema --list
           uv run wallace --completions zsh >/dev/null
 
+      - name: Build and smoke-test PyPI distribution artifacts
+        run: |
+          mise run build
+          uv run --isolated --no-project --with dist/*.whl wallace --version
+          uv run --isolated --no-project --with dist/*.whl wallace schema --list
+
   docs:
     name: Zensical Documentation
     runs-on: ubuntu-latest

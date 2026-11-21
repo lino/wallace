@@ -38,6 +38,10 @@ run = [
   "uv run pytest",
 ]
 
+[tasks.build]
+description = "Build sdist and wheel distribution artifacts for PyPI"
+run = "uv build --clear"
+
 [tasks.docs]
 description = "Build Zensical User, Operations, and Developer documentation strictly"
 run = "uv run zensical build --clean --strict"

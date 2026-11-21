@@ -2,17 +2,28 @@
 
 Named after Oscar Wallace—the forensic accountant who followed the ledger in *The Untouchables*—`wallace` audits Antigravity Integrated Development Environment (IDE) (`~/.gemini/antigravity`), Antigravity Command-Line Interface (CLI) (`~/.gemini/antigravity-cli`), Claude Code (`~/.claude`), Grok CLI (`~/.grok`), and OpenAI Codex (`~/.codex`) sessions to aggregate token usage, calculate USD spend, and browse conversation transcripts.
 
+## Installation
+
+```bash
+# Install the CLI tool from PyPI with uv (recommended)
+uv tool install wallace-audit
+
+# Or install with pip
+pip install wallace-audit
+```
+
 ## Quickstart
 
 ```bash
-# Install locked dependencies via mise + uv
-mise run setup
-
 # Show project & feature spend summary across providers
+wallace
+wallace -t yesterday
+wallace --timeframe "last 7 days"
+wallace report sources
+
+# From a local checkout, install locked dependencies via mise + uv
+mise run setup
 uv run wallace
-uv run wallace -t yesterday
-uv run wallace --timeframe "last 7 days"
-uv run wallace report sources
 
 # Launch minimalistic interactive TUI conversation browser (All / AGY / Claude / Grok / Codex)
 uv run wallace browse
@@ -43,7 +54,7 @@ uv run wallace metrics export
 
 ## Documentation
 
-Full Zensical User, Operations, and Developer documentation lives in [`docs/`](docs/index.md) and builds strictly via `mise run docs`. A native Unix manpage ships at [`man/wallace.1`](man/wallace.1).
+Full Zensical User, Operations, and Developer documentation lives in [`docs/`](https://github.com/lino/wallace/tree/main/docs) and builds strictly via `mise run docs`. A native Unix manpage ships at [`man/wallace.1`](https://github.com/lino/wallace/blob/main/man/wallace.1).
 
 ### Pricing
 

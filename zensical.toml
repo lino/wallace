@@ -13,6 +13,7 @@ nav = [
   ] },
   { "Operations Manual" = [
     { "Docker Runtime & Prometheus Metrics" = "operations/deployment-and-metrics.md" },
+    { "PyPI Release Process" = "operations/release-process.md" },
   ] },
   { "Developer Manual" = [
     { "Architecture (arc42)" = "developer/architecture.md" },

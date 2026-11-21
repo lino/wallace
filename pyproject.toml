@@ -1,20 +1,52 @@
 [build-system]
-requires = ["hatchling>=1.25.0"]
+requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "wallace"
-version = "0.1.0"
-description = "Forensic token usage and USD cost auditor for Antigravity IDE and CLI brains, named after Oscar Wallace."
+name = "wallace-audit"
+dynamic = ["version"]
+description = "Forensic token usage and USD cost auditor for Antigravity, Claude Code, Grok CLI, and Codex sessions, named after Oscar Wallace."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Lino" }]
+keywords = [
+  "tokens",
+  "cost",
+  "audit",
+  "llm",
+  "cli",
+  "prometheus",
+  "antigravity",
+  "claude",
+  "codex",
+  "grok",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: System :: Monitoring",
+  "Typing :: Typed",
+]
 dependencies = [
   "genai-prices>=0.2",
   "jsonschema>=4.23.0",
   "prometheus-client>=0.21.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/lino/wallace"
+Repository = "https://github.com/lino/wallace"
+Issues = "https://github.com/lino/wallace/issues"
+Documentation = "https://github.com/lino/wallace/tree/main/docs"
 
 [project.scripts]
 wallace = "wallace.cli:main"
@@ -27,6 +59,19 @@ dev = [
   "ruff>=0.8.0",
   "types-jsonschema>=4.23.0",
   "zensical>=0.0.20",
+]
+
+[tool.hatch.version]
+path = "src/wallace/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src/wallace",
+  "/schemas",
+  "/man",
+  "/README.md",
+  "/LICENSE",
+  "/pyproject.toml",
 ]
 
 [tool.hatch.build.targets.wheel]

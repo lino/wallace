@@ -1145,8 +1145,7 @@ wheels = [
 ]
 
 [[package]]
-name = "wallace"
-version = "0.1.0"
+name = "wallace-audit"
 source = { editable = "." }
 dependencies = [
     { name = "genai-prices" },

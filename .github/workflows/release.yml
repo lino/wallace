@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Verify & Build Distributions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up mise toolchain
+        uses: jdx/mise-action@v2
+        with:
+          cache: true
+
+      - name: Install locked dependencies
+        run: mise run setup
+
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          uv run python -c "
+          import os, sys, wallace
+          tag = os.environ['TAG_NAME'].removeprefix('v')
+          if tag != wallace.__version__:
+              sys.exit(f'Tag {os.environ[\"TAG_NAME\"]} does not match wallace.__version__ ({wallace.__version__})')
+          print(f'Verified tag v{tag} matches wallace.__version__')
+          "
+
+      - name: Run formatting, lint, strict mypy, and pytest gates
+        run: mise run verify
+
+      - name: Build sdist and wheel
+        run: mise run build
+
+      - name: Smoke-test built wheel in isolated environment
+        run: |
+          uv run --isolated --no-project --with dist/*.whl wallace --version
+          uv run --isolated --no-project --with dist/*.whl wallace schema --list
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+          retention-days: 7
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/wallace-audit
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Publish distributions to PyPI via Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: Create GitHub Release
+    needs: publish-pypi
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Create GitHub Release with dist artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/* \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
