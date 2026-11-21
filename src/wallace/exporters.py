@@ -5,13 +5,14 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 import os
 from typing import TextIO
 
 import jsonschema
 
 from wallace.metrics import record_schema_validation
-from wallace.models import AggregatedBucket, ScanReport
+from wallace.models import AggregatedBucket, ScanReport, display_cost
 from wallace.schemas import (
     CSV_COLUMN_ORDER,
     build_conversation_usage_json_schema,
@@ -116,7 +117,7 @@ def _bucket_display_cells(bucket: AggregatedBucket, *, is_total: bool = False) -
         "cached": f"{bucket.cached_input_tokens:,}",
         "output": f"{bucket.output_tokens:,}",
         "total": f"{bucket.total_tokens:,}",
-        "cost": f"${bucket.cost_usd:,.4f}",
+        "cost": display_cost(bucket.cost_usd),
     }
 
 
@@ -175,10 +176,15 @@ def render_table(report: ScanReport, *, color: bool = False) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _bucket_values(bucket: AggregatedBucket) -> list[object]:
+    row = bucket.to_dict()
+    return [row[col] for col in CSV_COLUMN_ORDER]
+
+
 def render_plain(report: ScanReport) -> str:
     """Render `report` as headerless tab-delimited rows suitable for `awk`/`cut`."""
     lines = [
-        "\t".join(str(bucket.to_dict()[col]) for col in CSV_COLUMN_ORDER)
+        "\t".join("" if value is None else str(value) for value in _bucket_values(bucket))
         for bucket in report.buckets
     ]
     return ("\n".join(lines) + "\n") if lines else ""
@@ -190,8 +196,7 @@ def render_tsv(report: ScanReport) -> str:
     writer = csv.writer(buf, delimiter="\t", quotechar='"', lineterminator="\n")
     writer.writerow(CSV_COLUMN_ORDER)
     for bucket in report.buckets:
-        raw_map = bucket.to_dict()
-        writer.writerow([raw_map[col] for col in CSV_COLUMN_ORDER])
+        writer.writerow(_bucket_values(bucket))
     return buf.getvalue()
 
 
@@ -203,7 +208,7 @@ def render_tsv(report: ScanReport) -> str:
 
 def sanitize_csv_cell(value: object, *, is_numeric: bool = False) -> str:
     """Sanitize a CSV cell against spreadsheet formula injection (`=`, `+`, `-`, `@`)."""
-    text = str(value)
+    text = "" if value is None else str(value)
     if is_numeric or not text:
         return text
     if text.startswith(FORMULA_PREFIXES):
@@ -273,11 +278,10 @@ def render_csv(report: ScanReport) -> str:
     )
     writer.writerow(CSV_COLUMN_ORDER)
     for bucket in report.buckets:
-        raw_map = bucket.to_dict()
         writer.writerow(
             [
-                sanitize_csv_cell(raw_map[col], is_numeric=(col in NUMERIC_COLUMNS))
-                for col in CSV_COLUMN_ORDER
+                sanitize_csv_cell(value, is_numeric=(col in NUMERIC_COLUMNS))
+                for col, value in zip(CSV_COLUMN_ORDER, _bucket_values(bucket), strict=True)
             ]
         )
     record_schema_validation(fmt="csv", direction="export", outcome="ok")
@@ -368,8 +372,11 @@ def _validate_csv_numeric_cells(
                 f"{loc}: Column '{col_name}' must be a non-negative integer. "
                 "Run 'wallace schema token-report --format csvw' to view the expected schema."
             ) from exc
+    if not row[15]:
+        return
     try:
-        if float(row[15]) < 0.0:
+        cost = float(row[15])
+        if not math.isfinite(cost) or cost < 0.0:
             raise ValueError("negative decimal")
     except ValueError as exc:
         record_schema_validation(fmt="csv", direction="import", outcome="error")

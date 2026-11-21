@@ -8,7 +8,10 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from wallace.claude_scanner import scan_claude_drafts
+from wallace.codex_scanner import scan_codex_drafts
 from wallace.config import AppConfig
+from wallace.grok_scanner import scan_grok_drafts
 from wallace.models import ConversationRecord, TurnUsage
 from wallace.pricing import calculate_turn_cost, normalize_model_name
 from wallace.protobuf import (
@@ -246,7 +249,9 @@ def _build_draft_conversation(
     config: AppConfig,
 ) -> DraftConversation | None:
     """Assemble a `DraftConversation` for a single `<brain>/<conv_id>` directory."""
-    transcript_path = conv_brain_dir / ".system_generated" / "logs" / "transcript.jsonl"
+    log_dir = conv_brain_dir / ".system_generated" / "logs"
+    transcript_path = log_dir / "transcript.jsonl"
+    full_path = log_dir / "transcript_full.jsonl"
     summary_title = summary.title if summary else ""
     gen_turns, traj, ann_title = _read_app_sidecars(app_root, conv_id, bool(summary_title))
     summary_ts = summary.last_modified if summary else ""
@@ -260,6 +265,7 @@ def _build_draft_conversation(
         [*(summary.workspace_uris if summary else []), *traj.workspace_uris, *extract.uris]
     )
     parent_id, root_id = _resolve_cascade_links(summary, gen_turns)
+    best_log = full_path if full_path.is_file() else transcript_path
     return DraftConversation(
         conversation_id=conv_id,
         source=source_label,
@@ -275,6 +281,7 @@ def _build_draft_conversation(
         initial_prompt=extract.initial_prompt,
         prompt_markers=tuple(extract.prompt_markers),
         turns=turns,
+        transcript_path=best_log if best_log.is_file() else None,
     )
 
 
@@ -314,7 +321,7 @@ def _scan_single_root(
 
 
 def scan_brains(config: AppConfig) -> list[ConversationRecord]:
-    """Scan all configured IDE, CLI, and standalone brain directories into records."""
+    """Scan all configured provider session directories into records."""
     all_drafts: dict[str, DraftConversation] = {}
     if config.ide_dir is not None:
         all_drafts.update(_scan_single_root(config.ide_dir, "ide", config))
@@ -322,6 +329,12 @@ def scan_brains(config: AppConfig) -> list[ConversationRecord]:
         all_drafts.update(_scan_single_root(config.cli_dir, "cli", config))
     for extra in config.extra_brain_dirs:
         all_drafts.update(_scan_single_root(extra, "standalone", config))
+    if config.claude_dir is not None:
+        all_drafts.update(scan_claude_drafts(config))
+    if config.grok_dir is not None:
+        all_drafts.update(scan_grok_drafts(config))
+
+    all_drafts.update(scan_codex_drafts(config))
 
     wp_regex = re.compile(config.work_package_pattern)
     ignored = {b.strip() for b in config.ignored_branches}
@@ -349,6 +362,7 @@ def scan_brains(config: AppConfig) -> list[ConversationRecord]:
                 last_timestamp=draft.last_timestamp,
                 turns=draft.turns,
                 prompt_markers=draft.prompt_markers,
+                transcript_path=draft.transcript_path,
             )
         )
     records.sort(key=lambda r: (r.project, r.feature, r.conversation_id))

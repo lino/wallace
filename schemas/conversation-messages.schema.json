@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.wallace.local/v1/conversation-messages.schema.json",
+  "title": "Wallace Conversation Transcript Messages",
+  "description": "Normalized chronological conversation messages emitted by 'wallace conversation read <ID> --format json' across AGY, Claude, Grok, and Codex.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "conversation_id",
+    "source",
+    "project",
+    "feature",
+    "title",
+    "primary_model",
+    "total_tokens",
+    "cost_usd",
+    "has_estimated_tokens",
+    "messages"
+  ],
+  "properties": {
+    "conversation_id": {
+      "type": "string",
+      "description": "Conversation UUID or session identifier."
+    },
+    "source": {
+      "type": "string",
+      "description": "Origin environment.",
+      "enum": [
+        "ide",
+        "cli",
+        "standalone",
+        "claude",
+        "grok",
+        "codex"
+      ]
+    },
+    "project": {
+      "type": "string",
+      "description": "Resolved project slug."
+    },
+    "feature": {
+      "type": "string",
+      "description": "Resolved feature or Work Package identifier."
+    },
+    "title": {
+      "type": "string",
+      "description": "Conversation display title."
+    },
+    "primary_model": {
+      "type": "string",
+      "description": "Dominant model identifier."
+    },
+    "total_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total conversation tokens."
+    },
+    "cost_usd": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Estimated USD cost, or null when any contributing usage is unpriced."
+    },
+    "has_estimated_tokens": {
+      "type": "boolean",
+      "description": "Whether any turn used estimated token counts."
+    },
+    "messages": {
+      "type": "array",
+      "description": "Chronological normalized conversation messages.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "index",
+          "role",
+          "created_at",
+          "model",
+          "content",
+          "thinking",
+          "tool_summary",
+          "tokens",
+          "is_estimated"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based chronological message index."
+          },
+          "role": {
+            "type": "string",
+            "description": "Normalized speaker role.",
+            "enum": [
+              "user",
+              "assistant",
+              "system",
+              "tool"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "description": "ISO-8601 step timestamp when recorded."
+          },
+          "model": {
+            "type": "string",
+            "description": "Assistant model identifier when recorded."
+          },
+          "content": {
+            "type": "string",
+            "description": "Normalized human-readable message text."
+          },
+          "thinking": {
+            "type": "string",
+            "description": "Optional reasoning/thinking summary text."
+          },
+          "tool_summary": {
+            "type": "string",
+            "description": "Optional concise summary of tool calls or tool output."
+          },
+          "tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Attributed message/turn token count when available."
+          },
+          "is_estimated": {
+            "type": "boolean",
+            "description": "Whether tokens were estimated from message text."
+          }
+        }
+      }
+    }
+  }
+}

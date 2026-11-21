@@ -13,6 +13,9 @@ from pathlib import Path
 ENV_CONFIG_PATH = "WALLACE_CONFIG"
 ENV_IDE_DIR = "WALLACE_IDE_DIR"
 ENV_CLI_DIR = "WALLACE_CLI_DIR"
+ENV_CLAUDE_DIR = "WALLACE_CLAUDE_DIR"
+ENV_GROK_DIR = "WALLACE_GROK_DIR"
+ENV_CODEX_DIR = "WALLACE_CODEX_DIR"
 ENV_BRAIN_DIRS = "WALLACE_BRAIN_DIRS"
 ENV_METRICS_HOST = "WALLACE_METRICS_HOST"
 ENV_METRICS_PORT = "WALLACE_METRICS_PORT"
@@ -20,9 +23,12 @@ ENV_METRICS_PORT = "WALLACE_METRICS_PORT"
 DEFAULT_REL_CONFIG_PATH = Path(".config") / "wallace" / "config.toml"
 DEFAULT_REL_IDE_DIR = Path(".gemini") / "antigravity"
 DEFAULT_REL_CLI_DIR = Path(".gemini") / "antigravity-cli"
+DEFAULT_REL_CLAUDE_DIR = Path(".claude")
+DEFAULT_REL_GROK_DIR = Path(".grok")
+DEFAULT_REL_CODEX_DIR = Path(".codex")
 DEFAULT_METRICS_HOST = "127.0.0.1"
 DEFAULT_METRICS_PORT = 9464
-TOKENS_PER_MILLION = 1_000_000.0
+GROK_TICKS_PER_USD = 10_000_000_000.0
 
 DEFAULT_IGNORED_BRANCHES: tuple[str, ...] = (
     "main",
@@ -50,63 +56,40 @@ class ModelPricing:
         output_per_million: USD rate per 1,000,000 output (including thinking) tokens.
     """
 
-    input_per_million: float
-    cached_input_per_million: float
-    output_per_million: float
-
-
-def default_pricing_table() -> dict[str, ModelPricing]:
-    """Return editable default USD per-1M-token rates for Antigravity models."""
-    return {
-        "gemini-4-carbon": ModelPricing(1.25, 0.125, 10.00),
-        "gemini-4-argon": ModelPricing(1.25, 0.125, 10.00),
-        "gemini-4-argon-high": ModelPricing(1.25, 0.125, 10.00),
-        "gemini-4-argon-medium": ModelPricing(1.25, 0.125, 10.00),
-        "gemini-4-argon-low": ModelPricing(1.25, 0.125, 10.00),
-        "gemini-4-argon-d": ModelPricing(1.25, 0.125, 10.00),
-        "gemini-4-argon-w": ModelPricing(1.25, 0.125, 10.00),
-        "gemini-3.8-flash": ModelPricing(0.30, 0.03, 2.50),
-        "gemini-3.8-flash-tiered": ModelPricing(0.30, 0.03, 2.50),
-        "gemini-3.7-flash": ModelPricing(0.15, 0.0375, 0.60),
-        "gemini-3.5-flash-lite": ModelPricing(0.10, 0.025, 0.40),
-        "claude-opus-5-5-high": ModelPricing(15.00, 1.50, 75.00),
-        "claude-opus-5-5-medium": ModelPricing(15.00, 1.50, 75.00),
-        "claude-opus-5-5-low": ModelPricing(15.00, 1.50, 75.00),
-        "claude-sonnet-5-5-high": ModelPricing(3.00, 0.30, 15.00),
-        "claude-sonnet-5-5-medium": ModelPricing(3.00, 0.30, 15.00),
-        "claude-sonnet-5-5-low": ModelPricing(3.00, 0.30, 15.00),
-        "family:claude-opus": ModelPricing(15.00, 1.50, 75.00),
-        "family:claude-sonnet": ModelPricing(3.00, 0.30, 15.00),
-        "family:gemini-4": ModelPricing(1.25, 0.125, 10.00),
-        "family:gemini-flash": ModelPricing(0.30, 0.03, 2.50),
-        "family:gemini-pro": ModelPricing(1.25, 0.125, 10.00),
-        "unknown": ModelPricing(1.00, 0.10, 5.00),
-    }
+    input_per_million: float | None = None
+    cached_input_per_million: float | None = None
+    output_per_million: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class AppConfig:
-    """Runtime configuration governing brain directories, feature extraction, and pricing.
+    """Runtime configuration governing session directories, feature extraction, and pricing.
 
     Attributes:
         ide_dir: Optional Antigravity IDE root directory (containing `brain/`).
         cli_dir: Optional Antigravity CLI root directory (containing `brain/`).
+        claude_dir: Optional Claude Code local session directory (default `~/.claude`).
+        grok_dir: Optional Grok CLI local session directory (default `~/.grok`).
+        codex_dir: Optional Codex home or rollout path.
         extra_brain_dirs: Additional standalone `brain/` directories to scan.
         ignored_branches: Default git branch names excluded from feature grouping.
         work_package_pattern: Regular expression extracting Work Package IDs.
         metrics_host: Default bind address for the Prometheus HTTP exporter.
         metrics_port: Default TCP port for the Prometheus HTTP exporter.
-        pricing: Mapping of model names and `family:*` keys to `ModelPricing`.
+        pricing: Local rate overrides by model name or `family:*` key.
     """
 
     ide_dir: Path | None = field(default_factory=lambda: Path.home() / DEFAULT_REL_IDE_DIR)
     cli_dir: Path | None = field(default_factory=lambda: Path.home() / DEFAULT_REL_CLI_DIR)
+    claude_dir: Path | None = None
+    grok_dir: Path | None = None
     extra_brain_dirs: tuple[Path, ...] = ()
     ignored_branches: tuple[str, ...] = DEFAULT_IGNORED_BRANCHES
     work_package_pattern: str = DEFAULT_WP_REGEX
     metrics_host: str = DEFAULT_METRICS_HOST
     metrics_port: int = DEFAULT_METRICS_PORT
-    pricing: dict[str, ModelPricing] = field(default_factory=default_pricing_table)
+    pricing: dict[str, ModelPricing] = field(default_factory=dict)
+    codex_dir: Path | None = None
 
 
 # endregion
@@ -132,33 +115,38 @@ def _parse_pricing_overrides(raw_pricing: object, base: dict[str, ModelPricing])
     for model_key, entry in raw_pricing.items():
         if not isinstance(entry, Mapping):
             continue
-        fallback = base.get(str(model_key), base["unknown"])
-        base[str(model_key)] = ModelPricing(
-            input_per_million=float(entry.get("input_per_million", fallback.input_per_million)),
-            cached_input_per_million=float(
-                entry.get("cached_input_per_million", fallback.cached_input_per_million)
-            ),
-            output_per_million=float(entry.get("output_per_million", fallback.output_per_million)),
-        )
+        overrides = {
+            key: float(entry[key])
+            for key in ("input_per_million", "cached_input_per_million", "output_per_million")
+            if key in entry
+        }
+        if overrides:
+            base[str(model_key)] = ModelPricing(**overrides)
 
 
 def _parse_paths_section(
     sec: object,
     ide_dir: Path | None,
     cli_dir: Path | None,
+    claude_dir: Path | None,
+    grok_dir: Path | None,
     extra_dirs: list[Path],
-) -> tuple[Path | None, Path | None, list[Path]]:
-    """Extract `(ide_dir, cli_dir, extra_dirs)` from a `[paths]` TOML section."""
+) -> tuple[Path | None, Path | None, Path | None, Path | None, list[Path]]:
+    """Extract `(ide_dir, cli_dir, claude_dir, grok_dir, extra_dirs)` from `[paths]` TOML."""
     if not isinstance(sec, Mapping):
-        return ide_dir, cli_dir, extra_dirs
+        return ide_dir, cli_dir, claude_dir, grok_dir, extra_dirs
     if "ide_dir" in sec:
         ide_dir = _resolve_optional_dir(str(sec["ide_dir"]), ide_dir)
     if "cli_dir" in sec:
         cli_dir = _resolve_optional_dir(str(sec["cli_dir"]), cli_dir)
+    if "claude_dir" in sec:
+        claude_dir = _resolve_optional_dir(str(sec["claude_dir"]), claude_dir)
+    if "grok_dir" in sec:
+        grok_dir = _resolve_optional_dir(str(sec["grok_dir"]), grok_dir)
     raw_extra = sec.get("extra_brain_dirs")
     if isinstance(raw_extra, list):
         extra_dirs = [Path(str(p)).expanduser() for p in raw_extra if str(p).strip()]
-    return ide_dir, cli_dir, extra_dirs
+    return ide_dir, cli_dir, claude_dir, grok_dir, extra_dirs
 
 
 def _parse_features_section(
@@ -179,32 +167,39 @@ def _parse_features_section(
 
 def _apply_toml_document(
     doc: Mapping[str, object],
-    *,
-    ide_dir: Path | None,
-    cli_dir: Path | None,
-    extra_dirs: list[Path],
-    ignored_branches: tuple[str, ...],
-    wp_pattern: str,
-    metrics_host: str,
-    metrics_port: int,
-    pricing: dict[str, ModelPricing],
+    base: AppConfig,
 ) -> AppConfig:
-    """Build an `AppConfig` by applying parsed TOML sections over defaults."""
-    ide_dir, cli_dir, extra_dirs = _parse_paths_section(
-        doc.get("paths"), ide_dir, cli_dir, extra_dirs
+    """Build an `AppConfig` by applying parsed TOML sections over `base`."""
+    ide_dir, cli_dir, claude_dir, grok_dir, extra_dirs = _parse_paths_section(
+        doc.get("paths"),
+        base.ide_dir,
+        base.cli_dir,
+        base.claude_dir,
+        base.grok_dir,
+        list(base.extra_brain_dirs),
     )
+    codex_dir = base.codex_dir
+    paths = doc.get("paths")
+    if isinstance(paths, Mapping) and "codex_dir" in paths:
+        codex_dir = _resolve_optional_dir(str(paths["codex_dir"]), codex_dir)
     ignored_branches, wp_pattern = _parse_features_section(
-        doc.get("features"), ignored_branches, wp_pattern
+        doc.get("features"), base.ignored_branches, base.work_package_pattern
     )
+    metrics_host = base.metrics_host
+    metrics_port = base.metrics_port
     metrics_sec = doc.get("metrics")
     if isinstance(metrics_sec, Mapping):
         metrics_host = str(metrics_sec.get("host", metrics_host))
         metrics_port = int(str(metrics_sec.get("port", metrics_port)))
 
+    pricing = dict(base.pricing)
     _parse_pricing_overrides(doc.get("pricing"), pricing)
     return AppConfig(
         ide_dir=ide_dir,
         cli_dir=cli_dir,
+        claude_dir=claude_dir,
+        grok_dir=grok_dir,
+        codex_dir=codex_dir,
         extra_brain_dirs=tuple(extra_dirs),
         ignored_branches=ignored_branches,
         work_package_pattern=wp_pattern,
@@ -228,30 +223,26 @@ def load_config(
         Resolved `AppConfig` instance.
     """
     environ = os.environ if env is None else env
+    home = Path.home()
     resolved_cfg = config_path
     if resolved_cfg is None:
         env_cfg = environ.get(ENV_CONFIG_PATH)
-        resolved_cfg = (
-            Path(env_cfg).expanduser() if env_cfg else Path.home() / DEFAULT_REL_CONFIG_PATH
-        )
+        resolved_cfg = Path(env_cfg).expanduser() if env_cfg else home / DEFAULT_REL_CONFIG_PATH
 
-    cfg = AppConfig()
+    cfg = AppConfig(
+        claude_dir=home / DEFAULT_REL_CLAUDE_DIR,
+        grok_dir=home / DEFAULT_REL_GROK_DIR,
+        codex_dir=_resolve_optional_dir(environ.get("CODEX_HOME"), home / DEFAULT_REL_CODEX_DIR),
+    )
     if resolved_cfg.is_file():
         doc = tomllib.loads(resolved_cfg.read_text(encoding="utf-8"))
-        cfg = _apply_toml_document(
-            doc,
-            ide_dir=cfg.ide_dir,
-            cli_dir=cfg.cli_dir,
-            extra_dirs=list(cfg.extra_brain_dirs),
-            ignored_branches=cfg.ignored_branches,
-            wp_pattern=cfg.work_package_pattern,
-            metrics_host=cfg.metrics_host,
-            metrics_port=cfg.metrics_port,
-            pricing=dict(cfg.pricing),
-        )
+        cfg = _apply_toml_document(doc, cfg)
 
     ide_dir = _resolve_optional_dir(environ.get(ENV_IDE_DIR), cfg.ide_dir)
     cli_dir = _resolve_optional_dir(environ.get(ENV_CLI_DIR), cfg.cli_dir)
+    claude_dir = _resolve_optional_dir(environ.get(ENV_CLAUDE_DIR), cfg.claude_dir)
+    grok_dir = _resolve_optional_dir(environ.get(ENV_GROK_DIR), cfg.grok_dir)
+    codex_dir = _resolve_optional_dir(environ.get(ENV_CODEX_DIR), cfg.codex_dir)
     extra_dirs = list(cfg.extra_brain_dirs)
     if ENV_BRAIN_DIRS in environ and environ[ENV_BRAIN_DIRS].strip():
         extra_dirs = [
@@ -264,13 +255,21 @@ def load_config(
     return AppConfig(
         ide_dir=ide_dir,
         cli_dir=cli_dir,
+        claude_dir=claude_dir,
+        grok_dir=grok_dir,
+        codex_dir=codex_dir,
         extra_brain_dirs=tuple(extra_dirs),
         ignored_branches=cfg.ignored_branches,
-        work_package_pattern=cfg.work_package_pattern,
+        work_package_pattern=wp_pattern_or_default(cfg.work_package_pattern),
         metrics_host=metrics_host,
         metrics_port=metrics_port,
         pricing=cfg.pricing,
     )
+
+
+def wp_pattern_or_default(pattern: str) -> str:
+    """Return `pattern` when non-empty, else `DEFAULT_WP_REGEX`."""
+    return pattern if pattern.strip() else DEFAULT_WP_REGEX
 
 
 # endregion
@@ -283,6 +282,9 @@ def render_config_toml(config: AppConfig) -> str:
     """Serialize an `AppConfig` to a commented, human-editable TOML document."""
     ide_str = str(config.ide_dir) if config.ide_dir is not None else ""
     cli_str = str(config.cli_dir) if config.cli_dir is not None else ""
+    claude_str = str(config.claude_dir) if config.claude_dir is not None else ""
+    grok_str = str(config.grok_dir) if config.grok_dir is not None else ""
+    codex_str = str(config.codex_dir) if config.codex_dir is not None else ""
     extra_items = ", ".join(f'"{p}"' for p in config.extra_brain_dirs)
     ignored_items = ", ".join(f'"{b}"' for b in config.ignored_branches)
     escaped_wp = config.work_package_pattern.replace("\\", "\\\\")
@@ -292,6 +294,9 @@ def render_config_toml(config: AppConfig) -> str:
         "[paths]",
         f'ide_dir = "{ide_str}"',
         f'cli_dir = "{cli_str}"',
+        f'claude_dir = "{claude_str}"',
+        f'grok_dir = "{grok_str}"',
+        f'codex_dir = "{codex_str}"',
         f"extra_brain_dirs = [{extra_items}]",
         "",
         "[features]",
@@ -303,16 +308,17 @@ def render_config_toml(config: AppConfig) -> str:
         f"port = {config.metrics_port}",
         "",
     ]
+    lines.extend(('# Add a [pricing."model-id"] table to override catalog rates.', ""))
     for model_key, rate in sorted(config.pricing.items()):
-        lines.extend(
-            [
-                f'[pricing."{model_key}"]',
-                f"input_per_million = {rate.input_per_million}",
-                f"cached_input_per_million = {rate.cached_input_per_million}",
-                f"output_per_million = {rate.output_per_million}",
-                "",
-            ]
-        )
+        lines.append(f'[pricing."{model_key}"]')
+        for name, value in (
+            ("input_per_million", rate.input_per_million),
+            ("cached_input_per_million", rate.cached_input_per_million),
+            ("output_per_million", rate.output_per_million),
+        ):
+            if value is not None:
+                lines.append(f"{name} = {value}")
+        lines.append("")
     return "\n".join(lines)
 
 

@@ -78,9 +78,12 @@
       "description": "Total tokens."
     },
     "cost_usd": {
-      "type": "number",
-      "minimum": 0.0,
-      "description": "Estimated USD cost."
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Estimated USD cost, or null when any contributing usage is unpriced."
     },
     "models": {
       "type": "array",
@@ -134,9 +137,12 @@
             "description": "Total tokens."
           },
           "cost_usd": {
-            "type": "number",
-            "minimum": 0.0,
-            "description": "Estimated USD cost."
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Estimated USD cost, or null when any contributing usage is unpriced."
           }
         }
       }
@@ -175,7 +181,10 @@
             "enum": [
               "ide",
               "cli",
-              "standalone"
+              "standalone",
+              "claude",
+              "grok",
+              "codex"
             ]
           },
           "project": {
@@ -239,9 +248,12 @@
             "description": "Total tokens."
           },
           "cost_usd": {
-            "type": "number",
-            "minimum": 0.0,
-            "description": "Estimated USD cost."
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Estimated USD cost, or null when any contributing usage is unpriced."
           }
         }
       }

@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import pytest
+from genai_prices import Usage, calc_price
 
 from wallace.aggregator import aggregate_report
 from wallace.config import AppConfig, ModelPricing, load_config
+from wallace.exporters import render_csv, render_json, render_table, validate_imported_csv
+from wallace.models import ConversationRecord, TurnUsage
+from wallace.pricing import calculate_turn_cost
 from wallace.scanner import scan_brains
 
 
@@ -134,6 +139,8 @@ def test_pricing_exact_and_family_fallback(sample_env: dict[str, Path]) -> None:
         env={
             "WALLACE_IDE_DIR": str(sample_env["ide"]),
             "WALLACE_CLI_DIR": str(sample_env["cli"]),
+            "WALLACE_CLAUDE_DIR": "",
+            "WALLACE_GROK_DIR": "",
         },
     )
     assert cfg.pricing["gemini-4-carbon"] == ModelPricing(2.0, 0.2, 10.0)
@@ -161,3 +168,44 @@ def test_aggregation_never_double_counts_tokens(sample_env: dict[str, Path]) -> 
     conv_rollup = aggregate_report(records, group_by="conversation", include_subagents=False)
     assert sum(b.total_tokens for b in conv_rollup.buckets) == report.totals.total_tokens
     assert len(conv_rollup.buckets) == 2
+
+
+def test_catalog_prices_cached_input_and_honors_partial_toml_override(tmp_path: Path) -> None:
+    """Pass inclusive input to the catalog and override only the configured rate."""
+    model = "gpt-5.3-codex"
+    expected = calc_price(Usage(input_tokens=1000, cache_read_tokens=250, output_tokens=100), model)
+    usage = {"input_tokens": 750, "cached_input_tokens": 250, "output_tokens": 100}
+    assert calculate_turn_cost(model=model, pricing_table={}, **usage) == pytest.approx(
+        float(expected.total_price)
+    )
+    path = tmp_path / "wallace.toml"
+    path.write_text(f'[pricing."{model}"]\noutput_per_million = 25\n', encoding="utf-8")
+    overrides = load_config(path, env={}).pricing
+    assert calculate_turn_cost(model=model, pricing_table=overrides, **usage) == pytest.approx(
+        float(expected.input_price) + 0.0025
+    )
+
+
+def test_unpriced_usage_preserves_tokens_and_marks_cost_exports() -> None:
+    """An unpriced turn makes the aggregate cost unavailable across export formats."""
+    model = "unlisted-test-model"
+    unknown = calculate_turn_cost(
+        model=model, input_tokens=900, cached_input_tokens=10, output_tokens=90, pricing_table={}
+    )
+    assert math.isnan(unknown)
+    record = ConversationRecord(
+        "test",
+        "codex",
+        "demo",
+        "feature",
+        "title",
+        turns=[
+            TurnUsage(model, 900, 10, 90, cost_usd=unknown),
+            TurnUsage("gpt-5.3-codex", 900, 10, 90, cost_usd=0.01),
+        ],
+    )
+    report = aggregate_report([record], group_by="source")
+    assert json.loads(render_json(report))["totals"]["cost_usd"] is None
+    assert report.totals.total_tokens == 2000
+    assert "N/A" in render_table(report)
+    assert validate_imported_csv(render_csv(report))[0]["cost_usd"] == ""

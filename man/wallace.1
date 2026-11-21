@@ -1,9 +1,12 @@
 .TH WALLACE 1 "November 2026" "wallace 0.1.0" "User Commands"
 .SH NAME
-wallace \- forensic token usage and USD cost auditor for Antigravity IDE and CLI brains
+wallace \- forensic token usage auditor and conversation browser for AGY, Claude, and Grok
 .SH SYNOPSIS
 .B wallace
-[\fB\-\-config\fR \fIPATH\fR] [\fB\-\-help\fR | \fB\-\-help\-all\fR | \fB\-\-version\fR]
+[\fB\-t\fR|\fB\-\-timeframe\fR \fISPEC\fR] [\fB\-\-config\fR \fIPATH\fR] [\fB\-\-help\fR | \fB\-\-help\-all\fR | \fB\-\-version\fR]
+.br
+.B wallace browse
+[\fICONVERSATION_ID\fR] [\fB\-t\fR|\fB\-\-timeframe\fR \fISPEC\fR] [\fB\-\-source\fR \fBall\fR|\fBagy\fR|\fBclaude\fR|\fBgrok\fR] [\fB\-\-query\fR \fITEXT\fR] [\fIOPTIONS\fR]
 .br
 .B wallace report
 [\fBsummary\fR|\fBprojects\fR|\fBfeatures\fR|\fBconversations\fR|\fBmodels\fR|\fBsources\fR|\fBdaily\fR|\fBweekly\fR|\fBmonthly\fR|\fBinterval\fR]
@@ -12,8 +15,8 @@ wallace \- forensic token usage and USD cost auditor for Antigravity IDE and CLI
 .B wallace task
 \fITASK_ID\fR [\fB\-\-project\fR \fISLUG\fR] [\fB\-\-conversation\fR \fIUUID\fR]... [\fB\-\-include\-qa\fR] [\fB\-\-format\fR \fBtable\fR|\fBjson\fR] [\fB\-\-output\fR \fIPATH\fR]
 .br
-.B wallace conversation show
-\fICONVERSATION_ID\fR [\fB\-\-turns\fR] [\fB\-\-output\fR \fIPATH\fR]
+.B wallace conversation
+[\fBshow\fR|\fBread\fR|\fBlist\fR] [\fIOPTIONS\fR]
 .br
 .B wallace query
 \fICONVERSATION_ID\fR [\fB\-\-turns\fR] [\fB\-\-output\fR \fIPATH\fR]
@@ -35,11 +38,12 @@ wallace \- forensic token usage and USD cost auditor for Antigravity IDE and CLI
 .SH DESCRIPTION
 Named after Oscar Wallace, the Treasury accountant who followed the ledger in
 \fIThe Untouchables\fR, \fBwallace\fR audits Antigravity IDE
-(\fI~/.gemini/antigravity\fR) and Antigravity CLI (\fI~/.gemini/antigravity-cli\fR)
-brain directories. It resolves canonical \fI<PROJECT>\-WP\-<NN>\fR identifiers
-from git branches, worker names, titles, and initial prompt briefs, and
-aggregates uncached input, cached input, thinking, and output tokens alongside
-estimated USD spend across timeframes, projects, tasks, conversations, and models.
+(\fI~/.gemini/antigravity\fR), Antigravity CLI (\fI~/.gemini/antigravity-cli\fR),
+Claude Code (\fI~/.claude\fR), and Grok CLI (\fI~/.grok\fR) session directories.
+It resolves canonical \fI<PROJECT>\-WP\-<NN>\fR identifiers from git branches,
+worker names, titles, and initial prompt briefs, aggregates exact or text-estimated
+tokens alongside USD spend, and provides a minimalistic single-viewport TUI
+conversation browser (\fBwallace browse\fR).
 .PP
 \fBwallace\fR integrates directly with \fBVisiData\fR (\fBvd\fR) via flat typed
 JSONL streams, TSV/CSV tables, multi-sheet SQLite ledgers, and an installable
@@ -49,18 +53,29 @@ frequency shortcuts.
 .TP
 .B report summary|projects|features|conversations|models|sources|daily|weekly|monthly|interval
 Aggregate token usage and USD spend across projects, features, and timeframes.
-Combine any report verb with \fB\-\-period day|week|month|interval\fR and
-\fB\-\-interval\fR (for example \fB6h\fR, \fB7d\fR, \fB14d\fR).
+Limit the audit window with \fB\-t\fR/\fB\-\-timeframe\fR (\fBtoday\fR,
+\fByesterday\fR, \fB"last 7 days"\fR, \fB7d\fR, \fB24h\fR, \fBthis\-week\fR,
+\fBlast\-week\fR, \fBthis\-month\fR, \fBlast\-month\fR, \fB2026\-W46\fR, or
+\fBYYYY\-MM\-DD..YYYY\-MM\-DD\fR). Combine any report verb with
+\fB\-\-period day|week|month|interval\fR and \fB\-\-interval\fR.
 .TP
 .B task \fITASK_ID\fR
 Aggregate all conversations matching \fITASK_ID\fR (including project-scoped
-bare \fIWP\-NN\fR fallbacks, explicit \fB\-\-conversation\fR UUIDs, and optional
-prorated QA attribution via \fB\-\-include\-qa\fR) as an aligned table or
-Draft 2020-12 JSON (\fItask\-usage.schema.json\fR).
+bare \fIWP\-NN\fR fallbacks, explicit \fB\-\-conversation\fR UUIDs, optional
+\fB\-t\fR/\fB\-\-timeframe\fR bounds, and optional prorated QA attribution via
+\fB\-\-include\-qa\fR) as an aligned table or Draft 2020-12 JSON
+(\fItask\-usage.schema.json\fR).
 .TP
-.B conversation show \fIID\fR / query \fIID\fR
-Query a single conversation UUID (or unambiguous prefix) and return self,
-subagent, and combined token usage and USD cost as JSON.
+.B browse [\fICONVERSATION_ID\fR]
+Launch the minimalistic interactive \fBcurses\fR conversation browser across
+All, AGY, Claude, and Grok sessions. Press \fBt\fR in list view to cycle
+timeframe windows (\fBall\fR, \fBtoday\fR, \fByesterday\fR, \fB7d\fR, \fB30d\fR,
+\fBthis\-month\fR, \fBlast\-month\fR). Requires an interactive TTY.
+.TP
+.B conversation show|read|list
+\fBshow\fR returns self, subagent, and combined token/cost JSON; \fBread\fR
+renders chronological messages as plain text or Draft 2020-12 JSON
+(\fIconversation\-messages.schema.json\fR); \fBlist\fR prints the conversation table.
 .TP
 .B visidata open|config|install
 Launch VisiData with a multi-sheet Wallace SQLite workbook (or specific sheet),
@@ -74,7 +89,8 @@ Emit Prometheus exposition metrics or run an HTTP \fI/metrics\fR exporter.
 .TP
 .B schema
 List or emit JSON Schema Draft 2020-12 and W3C CSVW data-interchange contracts
-(\fBtoken\-report\fR, \fBledger\-row\fR, \fBconversation\-usage\fR, and \fBtask\-usage\fR).
+(\fBtoken\-report\fR, \fBledger\-row\fR, \fBconversation\-usage\fR,
+\fBtask\-usage\fR, and \fBconversation\-messages\fR).
 .TP
 .B install
 Install an executable \fBwallace\fR launcher shim into \fB\-\-bin\-dir\fR or
@@ -84,14 +100,18 @@ Install an executable \fBwallace\fR launcher shim into \fB\-\-bin\-dir\fR or
 .B WALLACE_CONFIG
 Path to TOML configuration file (default: \fI~/.config/wallace/config.toml\fR).
 .TP
-.B WALLACE_IDE_DIR, WALLACE_CLI_DIR, WALLACE_BRAIN_DIRS
-Override Antigravity IDE, CLI, and standalone brain directories.
+.B WALLACE_IDE_DIR, WALLACE_CLI_DIR, WALLACE_CLAUDE_DIR, WALLACE_GROK_DIR, WALLACE_BRAIN_DIRS
+Override Antigravity IDE, Antigravity CLI, Claude, Grok, and standalone brain directories.
 .TP
 .B WALLACE_BIN_DIR
 Override target directory for \fBwallace install\fR (default: \fI~/.local/bin\fR).
 .TP
 .B WALLACE_METRICS_HOST, WALLACE_METRICS_PORT
 Override bind address and TCP port for \fBwallace metrics serve\fR.
+.TP
+.B WALLACE_NOW
+Optional ISO-8601 reference timestamp pinning relative timeframe calculations
+(\fByesterday\fR, \fBlast 7 days\fR, etc.) for reproducible scripts.
 .SH EXIT STATUS
 .TP
 .B 0

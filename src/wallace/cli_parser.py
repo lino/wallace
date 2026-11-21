@@ -22,16 +22,22 @@ KNOWN_FLAGS: tuple[str, ...] = (
     "--config",
     "--ide-dir",
     "--cli-dir",
+    "--claude-dir",
+    "--grok-dir",
+    "--codex-dir",
     "--brain-dir",
     "--source",
     "--project",
     "--feature",
+    "--query",
     "--conversation",
     "--include-qa",
     "--bin-dir",
     "--period",
     "--interval",
     "--group-by",
+    "-t",
+    "--timeframe",
     "--since",
     "--until",
     "--format",
@@ -85,10 +91,19 @@ def _suggest_unknown_flag(message: str) -> str:
 
 
 def _add_dir_override_flags(parser: argparse.ArgumentParser, *, advanced_visible: bool) -> None:
-    """Attach optional `--ide-dir`, `--cli-dir`, and `--brain-dir` override flags."""
+    """Attach optional session directory overrides."""
     adv_help = None if advanced_visible else argparse.SUPPRESS
     parser.add_argument("--ide-dir", type=Path, default=None, help=adv_help or "IDE root override.")
     parser.add_argument("--cli-dir", type=Path, default=None, help=adv_help or "CLI root override.")
+    parser.add_argument(
+        "--claude-dir", type=Path, default=None, help=adv_help or "Claude directory override."
+    )
+    parser.add_argument(
+        "--grok-dir", type=Path, default=None, help=adv_help or "Grok directory override."
+    )
+    parser.add_argument(
+        "--codex-dir", type=Path, default=None, help=adv_help or "Codex directory override."
+    )
     parser.add_argument(
         "--brain-dir",
         action="append",
@@ -103,21 +118,30 @@ def _add_common_filter_flags(parser: argparse.ArgumentParser, *, advanced_visibl
     adv_help = None if advanced_visible else argparse.SUPPRESS
     parser.add_argument(
         "--source",
-        choices=("all", "ide", "cli", "standalone"),
+        choices=("all", "agy", "ide", "cli", "standalone", "claude", "grok", "codex"),
         default="all",
-        help="Filter by Antigravity source ('all', 'ide', 'cli', or 'standalone').",
+        help="Filter by provider or Antigravity origin.",
     )
     parser.add_argument("--project", default="", help="Substring filter on project name.")
     parser.add_argument("--feature", default="", help="Substring filter on feature or WP ID.")
     parser.add_argument(
+        "-t",
+        "--timeframe",
+        default="",
+        help=(
+            "Limit timeframe (e.g. 'today', 'yesterday', 'last 7 days', '7d', "
+            "'this-week', 'last-month', or 'YYYY-MM-DD..YYYY-MM-DD')."
+        ),
+    )
+    parser.add_argument(
         "--since",
         default="",
-        help=adv_help or "Include turns/conversations at or after ISO-8601 timestamp.",
+        help=adv_help or "Include turns at or after ISO-8601 or relative date (e.g. 'yesterday').",
     )
     parser.add_argument(
         "--until",
         default="",
-        help=adv_help or "Include turns/conversations at or before ISO-8601 timestamp.",
+        help=adv_help or "Include turns at or before ISO-8601 or relative date.",
     )
     _add_dir_override_flags(parser, advanced_visible=advanced_visible)
 
@@ -202,6 +226,15 @@ def _register_task_subparser(
         action="store_true",
         help="Include dedicated and prorated multi-task QA conversations.",
     )
+    adv_help = None if advanced_visible else argparse.SUPPRESS
+    task_p.add_argument(
+        "-t",
+        "--timeframe",
+        default="",
+        help="Optional timeframe limit (e.g. 'yesterday', 'last 7 days', '7d', 'this-month').",
+    )
+    task_p.add_argument("--since", default="", help=adv_help or "Lower date/time bound.")
+    task_p.add_argument("--until", default="", help=adv_help or "Upper date/time bound.")
     task_p.add_argument(
         "--format",
         choices=("table", "json"),
@@ -217,18 +250,64 @@ def _register_conversation_and_visidata(
     *,
     advanced_visible: bool,
 ) -> None:
-    """Register `conversation`, `query`, `task`, and `visidata` subcommands."""
-    conv_p = subparsers.add_parser("conversation", help="Inspect a single conversation ledger.")
+    """Register `browse`, `conversation`, `query`, `task`, and `visidata` subcommands."""
+    browse_p = subparsers.add_parser(
+        "browse",
+        help="Launch minimalistic interactive TUI browser across AGY, Claude, Grok, and Codex.",
+    )
+    browse_p.add_argument(
+        "conversation_id",
+        nargs="?",
+        default="",
+        help="Optional conversation ID or unambiguous prefix to open directly.",
+    )
+    browse_p.add_argument("--query", default="", help="Initial search filter query.")
+    _add_common_filter_flags(browse_p, advanced_visible=advanced_visible)
+
+    conv_p = subparsers.add_parser(
+        "conversation", help="Inspect, read, or list conversation transcripts and ledgers."
+    )
     conv_sub = conv_p.add_subparsers(dest="verb")
     show_p = conv_sub.add_parser("show", help="Return token and USD cost JSON for a conversation.")
     _attach_query_args(show_p, advanced_visible=advanced_visible)
+
+    read_p = conv_sub.add_parser(
+        "read", help="Read chronological messages of a conversation as text or JSON."
+    )
+    read_p.add_argument("conversation_id", help="Exact conversation ID or unambiguous prefix.")
+    read_p.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Transcript output format ('text' or 'json').",
+    )
+    read_p.add_argument("--output", type=Path, default=None, help="Optional output file path.")
+    _add_dir_override_flags(read_p, advanced_visible=advanced_visible)
+
+    list_p = conv_sub.add_parser(
+        "list", help="List conversations across configured providers (non-TUI companion)."
+    )
+    _add_report_flags(
+        list_p,
+        default_group="conversation",
+        default_period="none",
+        advanced_visible=advanced_visible,
+    )
 
     query_p = subparsers.add_parser(
         "query", help="Query a conversation ID (or prefix) and return token/cost JSON."
     )
     _attach_query_args(query_p, advanced_visible=advanced_visible)
     _register_task_subparser(subparsers, advanced_visible=advanced_visible)
+    _register_visidata_subparser(subparsers, advanced_visible=advanced_visible)
 
+
+def _register_visidata_subparser(
+    subparsers: argparse._SubParsersAction[ActionableArgumentParser],
+    *,
+    advanced_visible: bool,
+) -> None:
+    """Register `wallace visidata open|config|install` subcommands."""
     vd_p = subparsers.add_parser("visidata", help="VisiData (vd) exploration & plugin integration.")
     vd_sub = vd_p.add_subparsers(dest="verb")
     open_p = vd_sub.add_parser("open", help="Open multi-sheet Wallace ledger directly in VisiData.")
@@ -344,7 +423,7 @@ def build_parser(*, advanced_visible: bool = False) -> argparse.ArgumentParser:
 
 def render_shell_completions(shell: str) -> str:
     """Return a concise shell completion script for `bash`, `zsh`, or `fish`."""
-    nouns = "report conversation query task visidata config metrics schema install"
+    nouns = "report browse conversation query task visidata config metrics schema install"
     if shell == "fish":
         return f"complete -c wallace -f -n '__fish_use_subcommand' -a '{nouns}'\n"
     if shell == "zsh":

@@ -3,9 +3,35 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import UTC, datetime, tzinfo
 
-from wallace.models import AggregatedBucket, ConversationRecord, ScanReport, TurnUsage
-from wallace.timeframes import VALID_PERIODS, bucket_timestamp
+from wallace.metrics import record_timeframe_query
+from wallace.models import (
+    AggregatedBucket,
+    ConversationRecord,
+    ScanReport,
+    TurnUsage,
+    sortable_cost,
+)
+from wallace.timeframes import (
+    VALID_PERIODS,
+    TimeframeBounds,
+    bucket_timestamp,
+    current_reference_time,
+    resolve_filter_bounds,
+    timestamp_within_bounds,
+)
+
+AGY_SOURCES = frozenset({"ide", "cli", "standalone"})
+
+
+def _matches_source_filter(record_source: str, source_filter: str) -> bool:
+    """Return `True` when `record_source` satisfies `source_filter` (`all`, `agy`, etc.)."""
+    if source_filter in ("", "all"):
+        return True
+    if source_filter == "agy":
+        return record_source.lower() in AGY_SOURCES
+    return record_source.lower() == source_filter
 
 
 def filter_conversations(
@@ -14,36 +40,58 @@ def filter_conversations(
     source: str = "all",
     project: str = "",
     feature: str = "",
+    timeframe: str = "",
     since: str = "",
     until: str = "",
+    now: datetime | None = None,
 ) -> list[ConversationRecord]:
-    """Filter `ConversationRecord` items by source, project, feature, and ISO date range."""
+    """Filter `ConversationRecord` items by source, project, feature, and timeframe bounds."""
+    ref_now = current_reference_time(now)
+    bounds = resolve_filter_bounds(timeframe=timeframe, since=since, until=until, now=ref_now)
+    if not bounds.is_unbounded:
+        record_timeframe_query(timeframe=bounds.metric_category)
     proj_needle = project.strip().lower()
     feat_needle = feature.strip().lower()
     src_needle = source.strip().lower()
+    default_tz = ref_now.tzinfo or UTC
     filtered: list[ConversationRecord] = []
 
     for rec in records:
-        if src_needle not in ("", "all") and rec.source.lower() != src_needle:
+        if not _matches_source_filter(rec.source, src_needle):
             continue
         if proj_needle and proj_needle not in rec.project.lower():
             continue
         if feat_needle and feat_needle not in rec.feature.lower():
             continue
-        sliced = _slice_record_by_date(rec, since=since, until=until)
+        sliced = slice_record_by_bounds(rec, bounds, default_tz=default_tz)
         if sliced is not None:
             filtered.append(sliced)
     return filtered
 
 
-def _slice_record_by_date(
+def slice_record_by_bounds(
     rec: ConversationRecord,
+    bounds: TimeframeBounds,
     *,
-    since: str,
-    until: str,
+    default_tz: tzinfo = UTC,
 ) -> ConversationRecord | None:
-    """Return `rec` with turns bounded by `[since, until]`, or `None` when empty."""
-    filtered_turns = _filter_turns_by_date(rec, since=since, until=until)
+    """Return `rec` with turns bounded by `bounds`, or `None` when zero turns match."""
+    if bounds.is_unbounded:
+        return rec
+    tz: tzinfo = default_tz
+    if bounds.since is not None and bounds.since.tzinfo is not None:
+        tz = bounds.since.tzinfo
+    elif bounds.until is not None and bounds.until.tzinfo is not None:
+        tz = bounds.until.tzinfo
+    filtered_turns = [
+        turn
+        for turn in rec.turns
+        if timestamp_within_bounds(
+            turn.created_at or rec.last_timestamp or rec.started_at,
+            bounds,
+            default_tz=tz,
+        )
+    ]
     if not filtered_turns:
         return None
     if len(filtered_turns) == len(rec.turns):
@@ -64,32 +112,8 @@ def _slice_record_by_date(
         last_timestamp=filtered_turns[-1].created_at or rec.last_timestamp,
         turns=filtered_turns,
         prompt_markers=rec.prompt_markers,
+        transcript_path=rec.transcript_path,
     )
-
-
-def _turn_within_bounds(ts: str, *, since: str, until: str) -> bool:
-    """Return `True` when `ts` falls inside optional `[since, until]` ISO bounds."""
-    if not ts:
-        return True
-    if since and ts < since:
-        return False
-    return not (until and ts > until)
-
-
-def _filter_turns_by_date(
-    rec: ConversationRecord,
-    *,
-    since: str,
-    until: str,
-) -> list[TurnUsage]:
-    """Filter a conversation's turns against optional `since` and `until` ISO bounds."""
-    if not since and not until:
-        return rec.turns
-    return [
-        turn
-        for turn in rec.turns
-        if _turn_within_bounds(turn.created_at or rec.last_timestamp, since=since, until=until)
-    ]
 
 
 def _merge_label(existing: str, incoming: str) -> str:
@@ -277,12 +301,12 @@ def _sort_buckets(buckets: list[AggregatedBucket], *, period: str) -> list[Aggre
     if period != "none":
         return sorted(
             buckets,
-            key=lambda b: (b.period_start or b.period, b.cost_usd, b.total_tokens),
+            key=lambda b: (b.period_start or b.period, sortable_cost(b.cost_usd), b.total_tokens),
             reverse=True,
         )
     return sorted(
         buckets,
-        key=lambda b: (-b.cost_usd, -b.total_tokens, b.project, b.feature, b.key),
+        key=lambda b: (-sortable_cost(b.cost_usd), -b.total_tokens, b.project, b.feature, b.key),
     )
 
 

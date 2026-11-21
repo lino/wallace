@@ -33,10 +33,12 @@ The `/metrics` endpoint responds with HTTP `200` and serves bounded Prometheus s
 | `wallace_cached_input_tokens_total` | Gauge | `source`, `project`, `model` | Cache-read prompt input tokens. |
 | `wallace_output_tokens_total` | Gauge | `source`, `project`, `model` | Output tokens including thinking tokens. |
 | `wallace_thinking_tokens_total` | Gauge | `source`, `project`, `model` | Reasoning/thinking token subset. |
-| `wallace_cost_usd_total` | Gauge | `source`, `project`, `model` | Estimated cumulative USD cost. |
+| `wallace_cost_usd_total` | Gauge | `source`, `project`, `model` | Estimated cumulative USD cost. `NaN` indicates unpriced usage in the series. |
 | `wallace_conversations_total` | Gauge | `source`, `project` | Distinct conversation count per project. |
 | `wallace_scan_duration_seconds` | Gauge | *(none)* | Wall-clock duration of the latest scan. |
 | `wallace_schema_validations_total` | Counter | `format`, `direction`, `outcome` | JSON, JSONL, and CSV validation outcomes. |
+| `wallace_browser_views_total` | Counter | `source`, `view` | Conversation browser (`list`, `detail`) and CLI `read` counts. |
+| `wallace_timeframe_queries_total` | Counter | `timeframe` | Bounded timeframe filter evaluations (`yesterday`, `rolling`, `custom`, etc.). |
 
 ## Troubleshooting
 
@@ -44,3 +46,5 @@ The `/metrics` endpoint responds with HTTP `200` and serves bounded Prometheus s
 | --- | --- | --- |
 | Port `9464` already in use | Another exporter is bound to `9464` | Set `WALLACE_BIND_PORT=9465` or pass `--port 9465` |
 | Metrics show zero conversations in Docker | Host brain path differs from `~/.gemini` | Set `WALLACE_HOST_IDE_DIR` and `WALLACE_HOST_CLI_DIR` before `docker compose up` |
+
+For Codex metrics in Docker, set `WALLACE_HOST_CODEX_DIR` if the host uses a custom Codex home. Compose mounts the active and archived session directories read-only.

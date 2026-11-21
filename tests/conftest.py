@@ -153,6 +153,14 @@ def _write_transcript(root: Path, conv_id: str, steps: list[dict[str, object]]) 
     (log_dir / "transcript.jsonl").write_text(content, encoding="utf-8")
 
 
+@pytest.fixture(autouse=True)
+def _isolate_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent tests from scanning host `~/.claude` or `~/.grok` unless explicitly configured."""
+    monkeypatch.setenv("WALLACE_CLAUDE_DIR", "")
+    monkeypatch.setenv("WALLACE_GROK_DIR", "")
+    monkeypatch.setenv("WALLACE_CODEX_DIR", "")
+
+
 @pytest.fixture
 def sample_env(tmp_path: Path) -> dict[str, Path]:
     """Create realistic Antigravity IDE, CLI, and standalone brain fixtures."""

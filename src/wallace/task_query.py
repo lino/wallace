@@ -6,7 +6,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from wallace.exporters import ANSI_BOLD, ANSI_CYAN, ANSI_DIM, ANSI_GREEN, ANSI_RESET
-from wallace.models import ConversationRecord, PromptMarker, TurnUsage
+from wallace.models import (
+    ConversationRecord,
+    PromptMarker,
+    TurnUsage,
+    display_cost,
+    export_cost,
+    sortable_cost,
+)
 from wallace.resolver import normalize_wp_token
 
 # region Data Models
@@ -210,7 +217,7 @@ def _summarize_conversation_contribution(
         "output_tokens": c_out,
         "thinking_tokens": c_think,
         "total_tokens": c_inp + c_cached + c_out,
-        "cost_usd": round(c_cost, 6),
+        "cost_usd": export_cost(c_cost),
     }
 
 
@@ -282,10 +289,10 @@ def _format_model_rows(model_totals: dict[str, list[float]]) -> list[dict[str, o
                 "output_tokens": out,
                 "thinking_tokens": int(vals[4]),
                 "total_tokens": inp + cached + out,
-                "cost_usd": round(vals[5], 6),
+                "cost_usd": export_cost(vals[5]),
             }
         )
-    rows.sort(key=lambda r: (-float(str(r["cost_usd"])), str(r["model"])))
+    rows.sort(key=lambda r: (-sortable_cost(r["cost_usd"]), str(r["model"])))
     return rows
 
 
@@ -359,7 +366,7 @@ def query_task_usage(
         "output_tokens": out_sum,
         "thinking_tokens": think_sum,
         "total_tokens": inp_sum + cached_sum + out_sum,
-        "cost_usd": round(cost_sum, 6),
+        "cost_usd": export_cost(cost_sum),
         "models": _format_model_rows(model_totals),
         "conversations": conv_rows,
     }
@@ -399,7 +406,7 @@ def _format_conv_cells(item: dict[str, object]) -> tuple[str, ...]:
         f"{int(str(item['input_tokens'])):,}",
         f"{int(str(item['cached_input_tokens'])):,}",
         f"{int(str(item['output_tokens'])):,}",
-        f"${float(str(item['cost_usd'])):,.4f}",
+        display_cost(item["cost_usd"]),
     )
 
 
@@ -417,7 +424,7 @@ def render_task_usage_table(payload: dict[str, object], *, color: bool = False) 
         f"{int(str(payload['input_tokens'])):,}",
         f"{int(str(payload['cached_input_tokens'])):,}",
         f"{int(str(payload['output_tokens'])):,}",
-        f"${float(str(payload['cost_usd'])):,.4f}",
+        display_cost(payload["cost_usd"]),
     )
     widths = _compute_tuple_widths(headers, rows, total_row)
     return _join_task_table_lines(headers, rows, total_row, widths, color=color)

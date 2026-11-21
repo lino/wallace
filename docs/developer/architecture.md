@@ -42,26 +42,31 @@ flowchart LR
     CLIMod["cli.py"] --> ConfigMod["config.py"]
     CLIMod --> ScannerMod["scanner.py"]
     ScannerMod --> ProtoMod["protobuf.py"]
+    ScannerMod --> ClaudeMod["claude_scanner.py"]
+    ScannerMod --> GrokMod["grok_scanner.py"]
     ScannerMod --> PricingMod["pricing.py"]
+    CLIMod --> BrowserMod["browser.py / browser_view.py"]
+    BrowserMod --> MsgMod["message_loader.py"]
     CLIMod --> AggMod["aggregator.py"]
-    AggMod --> TimeMod["timeframes.py"]
-    CLIMod --> ExpMod["exporters.py"]
-    CLIMod --> VDMod["visidata_integration.py"]
-    ExpMod --> SchemaMod["schemas.py"]
+    CLIMod --> ExpMod["exporters.py / schemas.py"]
     CLIMod --> MetricsMod["metrics.py"]
 ```
 
 | Module | Responsibility |
 | --- | --- |
-| `config.py` | Default model pricing, TOML loader, and `WALLACE_*` environment overrides. |
-| `protobuf.py` | Wire-format protobuf decoder for `gen_metadata` and `trajectory_metadata_blob`. |
-| `scanner.py` | Brain directory discovery, parent-tree project/feature resolution, and ID queries. |
-| `timeframes.py` | ISO-8601 parsing and `day`, `week`, `month`, and custom `interval` bucketing. |
-| `aggregator.py` | Turn-level filtering and multi-dimensional rollups without double-counting. |
+| `config.py` | Local pricing overrides, TOML loader, and `WALLACE_*` environment overrides. |
+| `protobuf.py` | Wire-format protobuf decoder for Antigravity `gen_metadata` and `trajectory_metadata_blob`. |
+| `claude_scanner.py` & `claude_export.py` | Claude Code `.jsonl` turn deduplication, subagent linking, `.json` exports, and fallback estimation. |
+| `grok_scanner.py` | Grok CLI `usage.json` (`costUsdTicks` + cached split) and `chat_history.jsonl` scanner. |
+| `scanner.py` | Unified AGY, Claude, and Grok discovery plus parent-tree project/feature resolution. |
+| `message_loader.py` | Normalized multi-provider `ConversationMessage` loader and `conversation read` serializers. |
+| `browser.py` & `browser_view.py` | Deterministic `BrowserState`, `80x24`-safe single-viewport layout, and `curses` event loop. |
+| `timeframe_bounds.py` & `timeframes.py` | Human/ISO timeframe window bounds (`yesterday`, `last 7 days`, `7d`) and `day`/`week`/`month`/`interval` bucketing. |
+| `aggregator.py` | Turn-level filtering (`all`, `agy`, `claude`, `grok`) and multi-dimensional rollups. |
 | `exporters.py` | Table, TSV, plain, JSON, JSONL, and formula-sanitized CSV serializers. |
 | `visidata_integration.py` | Multi-sheet SQLite workbook builder, `.visidatarc` plugin, and `vd` launcher. |
 | `schemas.py` | JSON Schema Draft 2020-12 and W3C CSVW contract generators. |
-| `metrics.py` | Prometheus gauges, schema counters, and HTTP `/metrics` server. |
+| `metrics.py` | Prometheus gauges, schema/browser counters, and HTTP `/metrics` server. |
 
 ## 6. Runtime View
 

@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from wallace.aggregator import aggregate_report
-from wallace.models import AggregatedBucket, ConversationRecord
+from wallace.models import AggregatedBucket, ConversationRecord, export_cost
 from wallace.schemas import CSV_COLUMN_ORDER
 from wallace.timeframes import bucket_timestamp
 
@@ -164,7 +164,7 @@ def _write_bucket_table(
             output_tokens INTEGER NOT NULL,
             thinking_tokens INTEGER NOT NULL,
             total_tokens INTEGER NOT NULL,
-            cost_usd REAL NOT NULL
+            cost_usd REAL
         )
         """
     )
@@ -180,7 +180,7 @@ CREATE TABLE turns (
     conversation_id TEXT NOT NULL, title TEXT NOT NULL, turn_index INTEGER NOT NULL,
     model TEXT NOT NULL, input_tokens INTEGER NOT NULL, cached_input_tokens INTEGER NOT NULL,
     output_tokens INTEGER NOT NULL, thinking_tokens INTEGER NOT NULL,
-    total_tokens INTEGER NOT NULL, cost_usd REAL NOT NULL
+    total_tokens INTEGER NOT NULL, cost_usd REAL
 )
 """
 
@@ -213,7 +213,7 @@ def _write_turns_table(conn: sqlite3.Connection, records: list[ConversationRecor
                     turn.output_tokens,
                     turn.thinking_tokens,
                     turn.total_tokens,
-                    round(turn.cost_usd, 6),
+                    export_cost(turn.cost_usd),
                 )
             )
     conn.executemany(

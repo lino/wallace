@@ -21,6 +21,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH" \
     WALLACE_IDE_DIR="/data/antigravity" \
     WALLACE_CLI_DIR="/data/antigravity-cli" \
+    WALLACE_CLAUDE_DIR="/data/claude" \
+    WALLACE_CODEX_DIR="/data/codex" \
+    WALLACE_GROK_DIR="/data/grok" \
     WALLACE_METRICS_HOST="0.0.0.0" \
     WALLACE_METRICS_PORT="9464"
 

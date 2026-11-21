@@ -110,7 +110,7 @@
         "name": "cost_usd",
         "titles": "Cost USD",
         "datatype": "decimal",
-        "required": true
+        "required": false
       }
     ]
   }

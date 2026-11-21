@@ -5,6 +5,33 @@ from __future__ import annotations
 import re
 from datetime import UTC, date, datetime, timedelta
 
+from wallace.timeframe_bounds import (
+    ENV_NOW,
+    TIMEFRAME_PRESETS,
+    TimeframeBounds,
+    current_reference_time,
+    parse_bound_datetime,
+    parse_iso_datetime,
+    resolve_filter_bounds,
+    resolve_timeframe_spec,
+    timestamp_within_bounds,
+)
+
+__all__ = [
+    "ENV_NOW",
+    "TIMEFRAME_PRESETS",
+    "VALID_PERIODS",
+    "TimeframeBounds",
+    "bucket_timestamp",
+    "current_reference_time",
+    "parse_bound_datetime",
+    "parse_interval_seconds",
+    "parse_iso_datetime",
+    "resolve_filter_bounds",
+    "resolve_timeframe_spec",
+    "timestamp_within_bounds",
+]
+
 # region Constants & Defaults
 
 VALID_PERIODS = frozenset({"none", "day", "week", "month", "interval"})
@@ -40,30 +67,6 @@ def parse_interval_seconds(spec: str) -> int:
         raise ValueError(f"Invalid interval '{spec}': duration must be greater than zero.")
     multipliers = {"m": 60, "h": 3600, "d": 86400, "w": 7 * 86400}
     return amount * multipliers[unit]
-
-
-def parse_iso_datetime(raw: str) -> datetime | None:
-    """Parse an ISO-8601 timestamp string into an aware or local `datetime`."""
-    cleaned = raw.strip()
-    if not cleaned:
-        return None
-    if cleaned.endswith("Z"):
-        cleaned = cleaned[:-1] + "+00:00"
-    # Handle SQLite space-separated timestamps like '2026-11-12 10:20:30+01:00'
-    if " " in cleaned and "T" not in cleaned[:12]:
-        parts = cleaned.split()
-        if len(parts) >= 2:
-            cleaned = f"{parts[0]}T{parts[1]}"
-    try:
-        return datetime.fromisoformat(cleaned)
-    except ValueError:
-        if len(cleaned) >= 10:
-            try:
-                d = date.fromisoformat(cleaned[:10])
-                return datetime(d.year, d.month, d.day, tzinfo=UTC)
-            except ValueError:
-                return None
-        return None
 
 
 def _bucket_custom_interval(dt: datetime, spec: str) -> tuple[str, str]:

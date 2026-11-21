@@ -1,8 +1,27 @@
-"""Domain models for turns, conversations, timeframe-aware buckets, and JSON queries."""
+"""Domain models for turns, messages, conversations, timeframe buckets, and JSON queries."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from pathlib import Path
+
+
+def export_cost(cost: float) -> float | None:
+    """Round a known cost or export an unavailable cost as null."""
+    return round(cost, 6) if math.isfinite(cost) else None
+
+
+def display_cost(cost: object, decimals: int = 4) -> str:
+    """Format a known USD amount or label it as unavailable."""
+    if isinstance(cost, (int, float)) and math.isfinite(cost):
+        return f"${cost:,.{decimals}f}"
+    return "N/A"
+
+
+def sortable_cost(cost: object) -> float:
+    """Place unavailable costs after known costs in descending sorts."""
+    return float(cost) if isinstance(cost, (int, float)) and math.isfinite(cost) else -math.inf
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +38,45 @@ class PromptMarker:
 
 
 @dataclass(frozen=True, slots=True)
+class ConversationMessage:
+    """Normalized human-readable conversation turn/step for browsing and CLI reading.
+
+    Attributes:
+        role: Canonical speaker role (`"user"`, `"assistant"`, `"system"`, or `"tool"`).
+        content: Primary message text body.
+        created_at: ISO-8601 timestamp when available.
+        model: Model identifier for assistant turns when available.
+        thinking: Optional reasoning/thinking summary text.
+        tool_summary: Concise summary of tool calls or tool output attached to this step.
+        tokens: Total tokens attributed to this message/turn (`0` if not turn-attributed).
+        is_estimated: Whether `tokens` was estimated from text rather than API usage metadata.
+    """
+
+    role: str
+    content: str
+    created_at: str = ""
+    model: str = ""
+    thinking: str = ""
+    tool_summary: str = ""
+    tokens: int = 0
+    is_estimated: bool = False
+
+    def to_dict(self, index: int) -> dict[str, object]:
+        """Serialize this message with 1-based `index` for JSON export."""
+        return {
+            "index": index,
+            "role": self.role,
+            "created_at": self.created_at,
+            "model": self.model,
+            "content": self.content,
+            "thinking": self.thinking,
+            "tool_summary": self.tool_summary,
+            "tokens": self.tokens,
+            "is_estimated": self.is_estimated,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class TurnUsage:
     """Token and USD cost metrics for a single model generation turn.
 
@@ -28,8 +86,9 @@ class TurnUsage:
         cached_input_tokens: Cached prompt tokens billed at cache-read input rate.
         output_tokens: Total output tokens (including thinking tokens).
         thinking_tokens: Reasoning/thinking subset of output tokens when reported.
-        cost_usd: Estimated USD cost for this turn.
+        cost_usd: Estimated USD cost for this turn, or NaN when unavailable.
         created_at: Optional ISO-8601 timestamp for the turn.
+        is_estimated: True when token counts were estimated from message text.
     """
 
     model: str
@@ -39,6 +98,7 @@ class TurnUsage:
     thinking_tokens: int = 0
     cost_usd: float = 0.0
     created_at: str = ""
+    is_estimated: bool = False
 
     @property
     def total_tokens(self) -> int:
@@ -56,30 +116,32 @@ class TurnUsage:
             "output_tokens": self.output_tokens,
             "thinking_tokens": self.thinking_tokens,
             "total_tokens": self.total_tokens,
-            "cost_usd": round(self.cost_usd, 6),
+            "cost_usd": export_cost(self.cost_usd),
+            "is_estimated": self.is_estimated,
         }
 
 
 @dataclass(slots=True)
 class ConversationRecord:
-    """Normalized metadata and token totals for one Antigravity conversation.
+    """Normalized metadata and token totals for one provider conversation.
 
     Attributes:
-        conversation_id: UUID string identifying the brain directory.
-        source: Origin application (`"ide"`, `"cli"`, or `"standalone"`).
+        conversation_id: Unique string identifying the session or brain directory.
+        source: Provider or Antigravity origin.
         project: Resolved project slug or workspace folder name.
         feature: Resolved feature identifier (Work Package, git branch, or root title).
         title: Human-readable conversation title.
-        parent_conversation_id: Immediate parent conversation UUID if spawned as subagent.
-        root_conversation_id: Top-level root conversation UUID in a subagent tree.
+        parent_conversation_id: Immediate parent conversation ID if spawned as subagent.
+        root_conversation_id: Top-level root conversation ID in a subagent tree.
         agent_name: Optional subagent role or swarm worker name.
-        git_branch: Optional git branch recorded in trajectory metadata.
+        git_branch: Optional git branch recorded in trajectory or session metadata.
         role: Conversation role (`"implementation"` or `"qa"`).
         primary_model: Dominant model identifier by token volume.
         started_at: Earliest ISO-8601 timestamp observed for this conversation.
         last_timestamp: Latest ISO-8601 timestamp observed for this conversation.
         turns: Ordered sequence of `TurnUsage` records.
         prompt_markers: Chronological prompt/board markers referencing task IDs.
+        transcript_path: Optional path to the on-disk transcript file or session directory.
     """
 
     conversation_id: str
@@ -97,6 +159,7 @@ class ConversationRecord:
     last_timestamp: str = ""
     turns: list[TurnUsage] = field(default_factory=list)
     prompt_markers: tuple[PromptMarker, ...] = ()
+    transcript_path: Path | None = None
 
     @property
     def input_tokens(self) -> int:
@@ -134,6 +197,11 @@ class ConversationRecord:
         return len(self.turns)
 
     @property
+    def has_estimated_tokens(self) -> bool:
+        """Return `True` if any turn's token counts were estimated from message text."""
+        return any(t.is_estimated for t in self.turns)
+
+    @property
     def referenced_tasks(self) -> tuple[str, ...]:
         """Return ordered distinct `<PROJECT>-WP-<NN>` IDs across all `prompt_markers`."""
         seen: dict[str, None] = {}
@@ -151,11 +219,11 @@ class AggregatedBucket:
         key: Unique grouping key for sorting and deduplication.
         period: Timeframe bucket label (`"2026-11-12"`, `"2026-W46"`, `"2026-11"`, or `"*"`).
         period_start: ISO-8601 start date/timestamp of the timeframe bucket, or `""`.
-        source: Source label (`"ide"`, `"cli"`, `"standalone"`, or `"mixed"`).
+        source: Provider or Antigravity origin, or `"mixed"` for combined usage.
         project: Project name (or `"*"` when grouped across projects).
         feature: Feature name (or `"*"` when grouped at project/model/period level).
-        conversation_id: Conversation UUID when grouped by conversation, else `""`.
-        conversation_ids: Sorted distinct conversation UUIDs contributing to this bucket.
+        conversation_id: Conversation ID when grouped by conversation, else `""`.
+        conversation_ids: Sorted distinct conversation IDs contributing to this bucket.
         title: Display title when grouped by conversation, else `""`.
         model: Model name (or `"mixed"` when multiple models contributed).
         conversation_count: Number of distinct conversations contributing to this bucket.
@@ -209,7 +277,7 @@ class AggregatedBucket:
             "output_tokens": self.output_tokens,
             "thinking_tokens": self.thinking_tokens,
             "total_tokens": self.total_tokens,
-            "cost_usd": round(self.cost_usd, 6),
+            "cost_usd": export_cost(self.cost_usd),
         }
 
 

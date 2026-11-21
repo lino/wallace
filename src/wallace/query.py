@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from wallace.models import ConversationRecord, TurnUsage
+from wallace.models import ConversationRecord, TurnUsage, export_cost, sortable_cost
 
 
 def query_conversation_usage(
@@ -31,6 +31,14 @@ def query_conversation_usage(
 
     exact = [r for r in records if r.conversation_id.lower() == needle]
     matches = exact or [r for r in records if r.conversation_id.lower().startswith(needle)]
+    if len(matches) > 1 and ":" not in needle:
+        roots = [r for r in matches if ":" not in r.conversation_id]
+        if len(roots) == 1 and all(
+            r is roots[0]
+            or r.conversation_id.lower().startswith(f"{roots[0].conversation_id.lower()}:")
+            for r in matches
+        ):
+            matches = roots
     if not matches:
         raise LookupError(f"Conversation '{conversation_query}' not found in scanned brains.")
     if len(matches) > 1:
@@ -65,7 +73,7 @@ def _usage_summary_dict(turns: list[TurnUsage]) -> dict[str, object]:
         "output_tokens": out,
         "thinking_tokens": think,
         "total_tokens": inp + cached + out,
-        "cost_usd": round(cost, 6),
+        "cost_usd": export_cost(cost),
     }
 
 
@@ -78,7 +86,7 @@ def _model_breakdown_list(turns: list[TurnUsage]) -> list[dict[str, object]]:
     for model_name, model_turns in by_model.items():
         summary = _usage_summary_dict(model_turns)
         rows.append({"model": model_name, **summary})
-    rows.sort(key=lambda r: (-float(str(r["cost_usd"])), str(r["model"])))
+    rows.sort(key=lambda r: (-sortable_cost(r["cost_usd"]), str(r["model"])))
     return rows
 
 
@@ -118,7 +126,7 @@ def _assemble_query_dict(
                 "title": sub.title,
                 "primary_model": sub.primary_model,
                 "total_tokens": sub.total_tokens,
-                "cost_usd": round(sub.cost_usd, 6),
+                "cost_usd": export_cost(sub.cost_usd),
             }
             for sub in descendants
         ],

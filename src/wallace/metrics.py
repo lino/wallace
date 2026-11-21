@@ -22,6 +22,18 @@ SCHEMA_VALIDATIONS_TOTAL = Counter(
     labelnames=("format", "direction", "outcome"),
     registry=_VALIDATION_REGISTRY,
 )
+BROWSER_VIEWS_TOTAL = Counter(
+    "wallace_browser_views_total",
+    "Total conversation browser and transcript read operations by bounded source and view.",
+    labelnames=("source", "view"),
+    registry=_VALIDATION_REGISTRY,
+)
+TIMEFRAME_QUERIES_TOTAL = Counter(
+    "wallace_timeframe_queries_total",
+    "Total timeframe-filtered operations by bounded timeframe category.",
+    labelnames=("timeframe",),
+    registry=_VALIDATION_REGISTRY,
+)
 
 
 def record_schema_validation(*, fmt: str, direction: str, outcome: str) -> None:
@@ -31,6 +43,16 @@ def record_schema_validation(*, fmt: str, direction: str, outcome: str) -> None:
         direction=direction,
         outcome=outcome,
     ).inc()
+
+
+def record_browser_view(*, source: str, view: str) -> None:
+    """Increment the bounded conversation browser/read counter for `source` and `view`."""
+    BROWSER_VIEWS_TOTAL.labels(source=source, view=view).inc()
+
+
+def record_timeframe_query(*, timeframe: str) -> None:
+    """Increment the bounded timeframe filter counter for `timeframe` category."""
+    TIMEFRAME_QUERIES_TOTAL.labels(timeframe=timeframe).inc()
 
 
 def _register_core_gauges(registry: CollectorRegistry) -> tuple[Gauge, ...]:

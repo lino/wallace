@@ -38,6 +38,7 @@ Static tables cannot pivot across arbitrary slices on the fly. `wallace` pairs w
   - `wallace schema ledger-row --format json-schema`
   - `wallace schema conversation-usage --format json-schema`
   - `wallace schema task-usage --format json-schema`
+  - `wallace schema conversation-messages --format json-schema`
 - All CSV exports prefix string cells beginning with `=`, `+`, `-`, `@`, `\t`, or `\r` with `'` to block spreadsheet formula injection.
 
 ## Troubleshooting

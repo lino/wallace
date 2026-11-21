@@ -7,6 +7,9 @@ services:
     environment:
       WALLACE_IDE_DIR: /data/antigravity
       WALLACE_CLI_DIR: /data/antigravity-cli
+      WALLACE_CLAUDE_DIR: /data/claude
+      WALLACE_GROK_DIR: /data/grok
+      WALLACE_CODEX_DIR: /data/codex
       WALLACE_METRICS_HOST: 0.0.0.0
       WALLACE_METRICS_PORT: "9464"
     ports:
@@ -14,4 +17,8 @@ services:
     volumes:
       - "${WALLACE_HOST_IDE_DIR:-~/.gemini/antigravity}:/data/antigravity:ro"
       - "${WALLACE_HOST_CLI_DIR:-~/.gemini/antigravity-cli}:/data/antigravity-cli:ro"
+      - "${WALLACE_HOST_CLAUDE_DIR:-~/.claude}:/data/claude:ro"
+      - "${WALLACE_HOST_GROK_DIR:-~/.grok}:/data/grok:ro"
+      - "${WALLACE_HOST_CODEX_DIR:-${CODEX_HOME:-~/.codex}}/sessions:/data/codex/sessions:ro"
+      - "${WALLACE_HOST_CODEX_DIR:-${CODEX_HOME:-~/.codex}}/archived_sessions:/data/codex/archived_sessions:ro"
     restart: unless-stopped

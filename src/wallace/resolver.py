@@ -50,6 +50,7 @@ class DraftConversation:
         initial_prompt: Initial user or worker assignment brief extracted from transcript.
         prompt_markers: Chronological prompt/board markers referencing task IDs.
         turns: Ordered `TurnUsage` list.
+        transcript_path: Optional path to the on-disk transcript file or session directory.
     """
 
     conversation_id: str
@@ -66,6 +67,7 @@ class DraftConversation:
     initial_prompt: str = ""
     prompt_markers: tuple[PromptMarker, ...] = ()
     turns: list[TurnUsage] = field(default_factory=list)
+    transcript_path: Path | None = None
 
 
 # endregion

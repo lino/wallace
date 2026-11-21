@@ -158,16 +158,13 @@ def test_malformed_import_payloads_and_prometheus_metrics(
     assert "--format" in capsys.readouterr().err
 
 
-def test_table_plain_config_completions_and_family_pricing(
+def test_table_plain_config_and_completions(
     sample_env: dict[str, Path],
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Table, plain, config show/init, shell completions, and family pricing work cleanly."""
-    from wallace.config import default_pricing_table
-    from wallace.pricing import resolve_model_pricing
-
+    """Table, plain, config show/init, and shell completions work cleanly."""
     monkeypatch.setenv("WALLACE_IDE_DIR", str(sample_env["ide"]))
     monkeypatch.setenv("WALLACE_CLI_DIR", str(sample_env["cli"]))
 
@@ -193,11 +190,3 @@ def test_table_plain_config_completions_and_family_pricing(
     for shell in ("bash", "zsh", "fish"):
         assert main(["--completions", shell]) == 0
         assert "wallace" in capsys.readouterr().out
-
-    table = default_pricing_table()
-    assert resolve_model_pricing("claude-opus-future", table) == table["family:claude-opus"]
-    assert resolve_model_pricing("claude-haiku-future", table) == table["family:claude-sonnet"]
-    assert resolve_model_pricing("gemini-4-neon", table) == table["family:gemini-4"]
-    assert resolve_model_pricing("gemini-9-flash", table) == table["family:gemini-flash"]
-    assert resolve_model_pricing("gemini-9-ultra", table) == table["family:gemini-pro"]
-    assert resolve_model_pricing("", table) == table["unknown"]

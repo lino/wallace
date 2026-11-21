@@ -9,43 +9,31 @@ SCHEMA_NAMES: tuple[str, ...] = (
     "ledger-row",
     "conversation-usage",
     "task-usage",
+    "conversation-messages",
 )
-CSV_COLUMN_ORDER: tuple[str, ...] = (
-    "period",
-    "period_start",
-    "source",
-    "project",
-    "feature",
-    "conversation_id",
-    "title",
-    "model",
-    "conversation_count",
-    "turn_count",
-    "input_tokens",
-    "cached_input_tokens",
-    "output_tokens",
-    "thinking_tokens",
-    "total_tokens",
-    "cost_usd",
+_CSVW_COLUMN_SPECS: tuple[tuple[str, str, str, bool], ...] = (
+    ("period", "Period", "string", True),
+    ("period_start", "Period Start", "string", False),
+    ("source", "Source", "string", True),
+    ("project", "Project", "string", True),
+    ("feature", "Feature", "string", True),
+    ("conversation_id", "Conversation ID", "string", False),
+    ("title", "Title", "string", False),
+    ("model", "Model", "string", True),
+    ("conversation_count", "Conversations", "integer", True),
+    ("turn_count", "Turns", "integer", True),
+    ("input_tokens", "Input Tokens", "integer", True),
+    ("cached_input_tokens", "Cached Input Tokens", "integer", True),
+    ("output_tokens", "Output Tokens", "integer", True),
+    ("thinking_tokens", "Thinking Tokens", "integer", True),
+    ("total_tokens", "Total Tokens", "integer", True),
+    ("cost_usd", "Cost USD", "decimal", False),
 )
+CSV_COLUMN_ORDER: tuple[str, ...] = tuple(spec[0] for spec in _CSVW_COLUMN_SPECS)
 BUCKET_REQUIRED_FIELDS: tuple[str, ...] = (
-    "period",
-    "period_start",
-    "source",
-    "project",
-    "feature",
-    "conversation_id",
+    *CSV_COLUMN_ORDER[:6],
     "conversation_ids",
-    "title",
-    "model",
-    "conversation_count",
-    "turn_count",
-    "input_tokens",
-    "cached_input_tokens",
-    "output_tokens",
-    "thinking_tokens",
-    "total_tokens",
-    "cost_usd",
+    *CSV_COLUMN_ORDER[6:],
 )
 
 
@@ -60,6 +48,14 @@ def _str_prop(description: str, enum: list[str] | None = None) -> dict[str, obje
 def _nonneg_int(description: str, minimum: int = 0) -> dict[str, object]:
     """Build a bounded integer JSON Schema property descriptor."""
     return {"type": "integer", "minimum": minimum, "description": description}
+
+
+def _cost_prop() -> dict[str, object]:
+    return {
+        "type": ["number", "null"],
+        "minimum": 0,
+        "description": "Estimated USD cost, or null when any contributing usage is unpriced.",
+    }
 
 
 def _nonneg_num(description: str, maximum: float | None = None) -> dict[str, object]:
@@ -80,8 +76,8 @@ def _ledger_row_properties() -> dict[str, object]:
             "ISO-8601 start date or timestamp of the timeframe bucket, or empty string."
         ),
         "source": _str_prop(
-            "Origin environment (ide, cli, standalone, mixed, or none).",
-            enum=["ide", "cli", "standalone", "mixed", "none"],
+            "Origin environment (ide, cli, standalone, claude, grok, codex, mixed, or none).",
+            enum=["ide", "cli", "standalone", "claude", "grok", "codex", "mixed", "none"],
         ),
         "project": _str_prop("Resolved project name or '*' when aggregated across projects."),
         "feature": _str_prop("Resolved Work Package, git branch, root title, or '*'."),
@@ -97,7 +93,7 @@ def _ledger_row_properties() -> dict[str, object]:
         "output_tokens": _nonneg_int("Total output tokens (including thinking tokens)."),
         "thinking_tokens": _nonneg_int("Total reasoning/thinking tokens reported."),
         "total_tokens": _nonneg_int("Sum of input_tokens, cached_input_tokens, and output_tokens."),
-        "cost_usd": _nonneg_num("Estimated total USD cost rounded to 6 decimal places."),
+        "cost_usd": _cost_prop(),
     }
 
 
@@ -116,68 +112,84 @@ def _report_bucket_properties() -> dict[str, object]:
     return ordered
 
 
-def build_ledger_row_json_schema() -> dict[str, object]:
-    """Build the JSON Schema Draft 2020-12 contract for single `jsonl` VisiData stream lines."""
+def _schema_envelope(
+    schema_id: str,
+    title: str,
+    description: str,
+    required: list[str],
+    properties: dict[str, object],
+) -> dict[str, object]:
+    """Build a top-level JSON Schema Draft 2020-12 strict object envelope."""
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://schemas.wallace.local/v1/ledger-row.schema.json",
-        "title": "Wallace Ledger Row (NDJSON / JSONL)",
-        "description": (
+        "$id": f"https://schemas.wallace.local/v1/{schema_id}",
+        "title": title,
+        "description": description,
+        "type": "object",
+        "additionalProperties": False,
+        "required": required,
+        "properties": properties,
+    }
+
+
+def build_ledger_row_json_schema() -> dict[str, object]:
+    """Build the JSON Schema Draft 2020-12 contract for single `jsonl` VisiData stream lines."""
+    return _schema_envelope(
+        "ledger-row.schema.json",
+        "Wallace Ledger Row (NDJSON / JSONL)",
+        (
             "Single newline-delimited JSON (JSONL) ledger record emitted by "
             "'wallace report ... --format jsonl' for VisiData and streaming pipelines."
         ),
-        "type": "object",
-        "additionalProperties": False,
-        "required": list(CSV_COLUMN_ORDER),
-        "properties": _ledger_row_properties(),
-    }
+        list(CSV_COLUMN_ORDER),
+        _ledger_row_properties(),
+    )
 
 
 def build_report_json_schema() -> dict[str, object]:
     """Build the JSON Schema Draft 2020-12 contract for `wallace report --format json`."""
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://schemas.wallace.local/v1/token-report.schema.json",
-        "title": "Wallace Token & Cost Audit Report",
-        "description": (
+    props: dict[str, object] = {
+        "group_by": _str_prop(
+            "Entity grouping dimension applied to the buckets array.",
+            enum=["none", "summary", "project", "feature", "conversation", "model", "source"],
+        ),
+        "period": _str_prop(
+            "Timeframe bucketing mode applied to turns.",
+            enum=["none", "day", "week", "month", "interval"],
+        ),
+        "interval": _str_prop(
+            "Custom duration specification when period is 'interval', else empty."
+        ),
+        "totals": {
+            "$ref": "#/$defs/bucket",
+            "description": "Grand total token counts and USD cost across all buckets.",
+        },
+        "buckets": {
+            "type": "array",
+            "description": "Ordered list of aggregated token usage buckets.",
+            "items": {"$ref": "#/$defs/bucket"},
+        },
+    }
+    doc = _schema_envelope(
+        "token-report.schema.json",
+        "Wallace Token & Cost Audit Report",
+        (
             "Aggregated token usage and USD cost report across Antigravity IDE and CLI "
             "brain directories, grouped by timeframe, project, feature, or conversation."
         ),
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["group_by", "period", "interval", "totals", "buckets"],
-        "properties": {
-            "group_by": _str_prop(
-                "Entity grouping dimension applied to the buckets array.",
-                enum=["none", "summary", "project", "feature", "conversation", "model", "source"],
-            ),
-            "period": _str_prop(
-                "Timeframe bucketing mode applied to turns.",
-                enum=["none", "day", "week", "month", "interval"],
-            ),
-            "interval": _str_prop(
-                "Custom duration specification when period is 'interval', else empty."
-            ),
-            "totals": {
-                "$ref": "#/$defs/bucket",
-                "description": "Grand total token counts and USD cost across all buckets.",
-            },
-            "buckets": {
-                "type": "array",
-                "description": "Ordered list of aggregated token usage buckets.",
-                "items": {"$ref": "#/$defs/bucket"},
-            },
-        },
-        "$defs": {
-            "bucket": {
-                "type": "object",
-                "description": "Aggregated token usage and USD cost bucket.",
-                "additionalProperties": False,
-                "required": list(BUCKET_REQUIRED_FIELDS),
-                "properties": _report_bucket_properties(),
-            }
-        },
+        ["group_by", "period", "interval", "totals", "buckets"],
+        props,
+    )
+    doc["$defs"] = {
+        "bucket": {
+            "type": "object",
+            "description": "Aggregated token usage and USD cost bucket.",
+            "additionalProperties": False,
+            "required": list(BUCKET_REQUIRED_FIELDS),
+            "properties": _report_bucket_properties(),
+        }
     }
+    return doc
 
 
 def _usage_totals_subschema(*, include_subagent_count: bool = False) -> dict[str, object]:
@@ -189,7 +201,7 @@ def _usage_totals_subschema(*, include_subagent_count: bool = False) -> dict[str
         "output_tokens": _nonneg_int("Output tokens."),
         "thinking_tokens": _nonneg_int("Thinking tokens."),
         "total_tokens": _nonneg_int("Total tokens."),
-        "cost_usd": _nonneg_num("Estimated USD cost."),
+        "cost_usd": _cost_prop(),
     }
     if include_subagent_count:
         props["subagent_count"] = _nonneg_int("Number of descendant subagent conversations.")
@@ -232,7 +244,7 @@ def _conversation_nested_arrays() -> dict[str, object]:
         "title": _str_prop("Subagent title."),
         "primary_model": _str_prop("Dominant model."),
         "total_tokens": _nonneg_int("Total tokens."),
-        "cost_usd": _nonneg_num("Estimated USD cost."),
+        "cost_usd": _cost_prop(),
     }
     turn_props: dict[str, object] = {
         "turn_index": _nonneg_int("1-based turn index.", minimum=1),
@@ -243,7 +255,8 @@ def _conversation_nested_arrays() -> dict[str, object]:
         "output_tokens": _nonneg_int("Turn output tokens."),
         "thinking_tokens": _nonneg_int("Turn thinking tokens."),
         "total_tokens": _nonneg_int("Turn total tokens."),
-        "cost_usd": _nonneg_num("Turn estimated USD cost."),
+        "cost_usd": _cost_prop(),
+        "is_estimated": _bool_prop("Whether token counts were estimated from message text."),
     }
     return {
         "models": _strict_array_of(
@@ -260,8 +273,10 @@ def _conversation_nested_arrays() -> dict[str, object]:
 def build_conversation_usage_json_schema() -> dict[str, object]:
     """Build the JSON Schema Draft 2020-12 contract for `wallace query <conversation_id>`."""
     root_props: dict[str, object] = {
-        "conversation_id": _str_prop("Conversation UUID."),
-        "source": _str_prop("Origin environment.", enum=["ide", "cli", "standalone"]),
+        "conversation_id": _str_prop("Conversation UUID or session identifier."),
+        "source": _str_prop(
+            "Origin environment.", enum=["ide", "cli", "standalone", "claude", "grok", "codex"]
+        ),
         "project": _str_prop("Resolved project name."),
         "feature": _str_prop("Resolved feature or Work Package ID."),
         "title": _str_prop("Conversation title."),
@@ -276,26 +291,25 @@ def build_conversation_usage_json_schema() -> dict[str, object]:
         "total_usage": _usage_totals_subschema(),
         **_conversation_nested_arrays(),
     }
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://schemas.wallace.local/v1/conversation-usage.schema.json",
-        "title": "Wallace Single-Conversation Token & Cost Audit",
-        "description": (
+    return _schema_envelope(
+        "conversation-usage.schema.json",
+        "Wallace Single-Conversation Token & Cost Audit",
+        (
             "Detailed self, subagent, and combined token usage and USD cost breakdown "
             "for a single Antigravity conversation ID."
         ),
-        "type": "object",
-        "additionalProperties": False,
-        "required": [k for k in root_props if k != "turns"],
-        "properties": root_props,
-    }
+        [k for k in root_props if k != "turns"],
+        root_props,
+    )
 
 
 def build_task_usage_json_schema() -> dict[str, object]:
     """Build the JSON Schema Draft 2020-12 contract for `wallace task <TASK-ID> --format json`."""
     conv_props: dict[str, object] = {
         "conversation_id": _str_prop("Contributing conversation UUID."),
-        "source": _str_prop("Origin environment.", enum=["ide", "cli", "standalone"]),
+        "source": _str_prop(
+            "Origin environment.", enum=["ide", "cli", "standalone", "claude", "grok", "codex"]
+        ),
         "project": _str_prop("Resolved project slug."),
         "feature": _str_prop("Resolved conversation feature or task identifier."),
         "title": _str_prop("Conversation display title."),
@@ -326,19 +340,55 @@ def build_task_usage_json_schema() -> dict[str, object]:
             conv_props,
         ),
     }
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://schemas.wallace.local/v1/task-usage.schema.json",
-        "title": "Wallace Task Token & Cost Spend Summary",
-        "description": (
+    return _schema_envelope(
+        "task-usage.schema.json",
+        "Wallace Task Token & Cost Spend Summary",
+        (
             "Aggregated token usage, turn count, USD cost, per-model breakdown, and "
             "contributing conversations for a single Work Package or task identifier."
         ),
-        "type": "object",
-        "additionalProperties": False,
-        "required": list(root_props.keys()),
-        "properties": root_props,
+        list(root_props.keys()),
+        root_props,
+    )
+
+
+def build_conversation_messages_json_schema() -> dict[str, object]:
+    """Build Draft 2020-12 JSON Schema for `wallace conversation read --format json`."""
+    msg_props: dict[str, object] = {
+        "index": _nonneg_int("1-based chronological message index.", minimum=1),
+        "role": _str_prop("Normalized speaker role.", enum=["user", "assistant", "system", "tool"]),
+        "created_at": _str_prop("ISO-8601 step timestamp when recorded."),
+        "model": _str_prop("Assistant model identifier when recorded."),
+        "content": _str_prop("Normalized human-readable message text."),
+        "thinking": _str_prop("Optional reasoning/thinking summary text."),
+        "tool_summary": _str_prop("Optional concise summary of tool calls or tool output."),
+        "tokens": _nonneg_int("Attributed message/turn token count when available."),
+        "is_estimated": _bool_prop("Whether tokens were estimated from message text."),
     }
+    root_props: dict[str, object] = {
+        "conversation_id": _str_prop("Conversation UUID or session identifier."),
+        "source": _str_prop(
+            "Origin environment.", enum=["ide", "cli", "standalone", "claude", "grok", "codex"]
+        ),
+        "project": _str_prop("Resolved project slug."),
+        "feature": _str_prop("Resolved feature or Work Package identifier."),
+        "title": _str_prop("Conversation display title."),
+        "primary_model": _str_prop("Dominant model identifier."),
+        "total_tokens": _nonneg_int("Total conversation tokens."),
+        "cost_usd": _cost_prop(),
+        "has_estimated_tokens": _bool_prop("Whether any turn used estimated token counts."),
+        "messages": _strict_array_of("Chronological normalized conversation messages.", msg_props),
+    }
+    return _schema_envelope(
+        "conversation-messages.schema.json",
+        "Wallace Conversation Transcript Messages",
+        (
+            "Normalized chronological conversation messages emitted by "
+            "'wallace conversation read <ID> --format json' across AGY, Claude, Grok, and Codex."
+        ),
+        list(root_props.keys()),
+        root_props,
+    )
 
 
 def _bool_prop(description: str) -> dict[str, object]:
@@ -348,27 +398,9 @@ def _bool_prop(description: str) -> dict[str, object]:
 
 def build_report_csvw_schema() -> dict[str, object]:
     """Build the W3C CSV on the Web (CSVW) metadata descriptor for CSV exports."""
-    specs = [
-        ("period", "Period", "string", True),
-        ("period_start", "Period Start", "string", False),
-        ("source", "Source", "string", True),
-        ("project", "Project", "string", True),
-        ("feature", "Feature", "string", True),
-        ("conversation_id", "Conversation ID", "string", False),
-        ("title", "Title", "string", False),
-        ("model", "Model", "string", True),
-        ("conversation_count", "Conversations", "integer", True),
-        ("turn_count", "Turns", "integer", True),
-        ("input_tokens", "Input Tokens", "integer", True),
-        ("cached_input_tokens", "Cached Input Tokens", "integer", True),
-        ("output_tokens", "Output Tokens", "integer", True),
-        ("thinking_tokens", "Thinking Tokens", "integer", True),
-        ("total_tokens", "Total Tokens", "integer", True),
-        ("cost_usd", "Cost USD", "decimal", True),
-    ]
     columns = [
         {"name": name, "titles": title, "datatype": dtype, "required": req}
-        for name, title, dtype, req in specs
+        for name, title, dtype, req in _CSVW_COLUMN_SPECS
     ]
     return {
         "@context": "http://www.w3.org/ns/csvw",
@@ -408,6 +440,7 @@ def render_schema_document(name: str, fmt: str = "json-schema") -> str:
             "ledger-row": build_ledger_row_json_schema,
             "conversation-usage": build_conversation_usage_json_schema,
             "task-usage": build_task_usage_json_schema,
+            "conversation-messages": build_conversation_messages_json_schema,
         }
         doc = builders[name]()
     else:

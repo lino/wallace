@@ -34,11 +34,14 @@
     },
     "source": {
       "type": "string",
-      "description": "Origin environment (ide, cli, standalone, mixed, or none).",
+      "description": "Origin environment (ide, cli, standalone, claude, grok, codex, mixed, or none).",
       "enum": [
         "ide",
         "cli",
         "standalone",
+        "claude",
+        "grok",
+        "codex",
         "mixed",
         "none"
       ]
@@ -99,9 +102,12 @@
       "description": "Sum of input_tokens, cached_input_tokens, and output_tokens."
     },
     "cost_usd": {
-      "type": "number",
-      "minimum": 0.0,
-      "description": "Estimated total USD cost rounded to 6 decimal places."
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Estimated USD cost, or null when any contributing usage is unpriced."
     }
   }
 }

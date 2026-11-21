@@ -26,7 +26,7 @@
   "properties": {
     "conversation_id": {
       "type": "string",
-      "description": "Conversation UUID."
+      "description": "Conversation UUID or session identifier."
     },
     "source": {
       "type": "string",
@@ -34,7 +34,10 @@
       "enum": [
         "ide",
         "cli",
-        "standalone"
+        "standalone",
+        "claude",
+        "grok",
+        "codex"
       ]
     },
     "project": {
@@ -117,9 +120,12 @@
           "description": "Total tokens."
         },
         "cost_usd": {
-          "type": "number",
-          "minimum": 0.0,
-          "description": "Estimated USD cost."
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Estimated USD cost, or null when any contributing usage is unpriced."
         }
       }
     },
@@ -168,9 +174,12 @@
           "description": "Total tokens."
         },
         "cost_usd": {
-          "type": "number",
-          "minimum": 0.0,
-          "description": "Estimated USD cost."
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Estimated USD cost, or null when any contributing usage is unpriced."
         },
         "subagent_count": {
           "type": "integer",
@@ -223,9 +232,12 @@
           "description": "Total tokens."
         },
         "cost_usd": {
-          "type": "number",
-          "minimum": 0.0,
-          "description": "Estimated USD cost."
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Estimated USD cost, or null when any contributing usage is unpriced."
         }
       }
     },
@@ -281,9 +293,12 @@
             "description": "Total tokens."
           },
           "cost_usd": {
-            "type": "number",
-            "minimum": 0.0,
-            "description": "Estimated USD cost."
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Estimated USD cost, or null when any contributing usage is unpriced."
           }
         }
       }
@@ -330,9 +345,12 @@
             "description": "Total tokens."
           },
           "cost_usd": {
-            "type": "number",
-            "minimum": 0.0,
-            "description": "Estimated USD cost."
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Estimated USD cost, or null when any contributing usage is unpriced."
           }
         }
       }
@@ -352,7 +370,8 @@
           "output_tokens",
           "thinking_tokens",
           "total_tokens",
-          "cost_usd"
+          "cost_usd",
+          "is_estimated"
         ],
         "properties": {
           "turn_index": {
@@ -394,9 +413,16 @@
             "description": "Turn total tokens."
           },
           "cost_usd": {
-            "type": "number",
-            "minimum": 0.0,
-            "description": "Turn estimated USD cost."
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Estimated USD cost, or null when any contributing usage is unpriced."
+          },
+          "is_estimated": {
+            "type": "boolean",
+            "description": "Whether token counts were estimated from message text."
           }
         }
       }
