@@ -1,22 +1,36 @@
 [project]
 site_name = "Wallace Documentation"
-site_description = "Forensic token usage, USD cost auditor, and conversation browser for AGY, Claude, and Grok."
+site_url = "https://lino.github.io/wallace/"
+site_description = "Forensic token usage, USD cost auditor, and conversation browser for Antigravity, Claude Code, Grok CLI, and OpenAI Codex."
 docs_dir = "docs"
 site_dir = "site"
 nav = [
-  { "Overview" = "index.md" },
-  { "User Manual" = [
-    { "Quickstart" = "user/quickstart.md" },
-    { "Conversation Browser (AGY, Claude, Grok)" = "user/conversation-browser.md" },
-    { "Timeframes & Conversation Queries" = "user/timeframes-and-queries.md" },
-    { "VisiData & Data Schemas" = "user/visidata-and-schemas.md" },
+  { "Home" = "index.md" },
+  { "Tutorials" = [
+    { "Overview" = "tutorials/index.md" },
+    { "Your First Token Audit" = "tutorials/first-token-audit.md" },
   ] },
-  { "Operations Manual" = [
-    { "Docker Runtime & Prometheus Metrics" = "operations/deployment-and-metrics.md" },
-    { "PyPI Release Process" = "operations/release-process.md" },
+  { "How-to Guides" = [
+    { "Overview" = "how-to/index.md" },
+    { "Audit Timeframes and Task Spend" = "how-to/audit-timeframes-and-tasks.md" },
+    { "Browse and Read Conversations" = "how-to/browse-and-read-conversations.md" },
+    { "Configure Pricing and Session Paths" = "how-to/configure-pricing-and-paths.md" },
+    { "Explore Ledgers in VisiData" = "how-to/explore-in-visidata.md" },
+    { "Deploy the Prometheus Exporter" = "how-to/deploy-prometheus-exporter.md" },
+    { "Release to PyPI" = "how-to/release-to-pypi.md" },
   ] },
-  { "Developer Manual" = [
-    { "Architecture (arc42)" = "developer/architecture.md" },
+  { "Reference" = [
+    { "Overview" = "reference/index.md" },
+    { "CLI Reference" = "reference/cli.md" },
+    { "Configuration and Environment" = "reference/configuration.md" },
+    { "Data Schemas and Formats" = "reference/data-schemas.md" },
+    { "Prometheus Metrics" = "reference/metrics.md" },
+    { "Glossary" = "reference/glossary.md" },
   ] },
-  { "Glossary" = "glossary.md" },
+  { "Explanation" = [
+    { "Overview" = "explanation/index.md" },
+    { "Pricing and Token Accounting" = "explanation/pricing-and-token-accounting.md" },
+    { "Multi-Provider Discovery and Attribution" = "explanation/multi-provider-attribution.md" },
+    { "Architecture (arc42)" = "explanation/architecture.md" },
+  ] },
 ]

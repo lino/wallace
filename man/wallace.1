@@ -1,12 +1,12 @@
 .TH WALLACE 1 "November 2026" "wallace 0.1.0" "User Commands"
 .SH NAME
-wallace \- forensic token usage auditor and conversation browser for AGY, Claude, and Grok
+wallace \- forensic token usage auditor and conversation browser for AGY, Claude, Grok, and Codex
 .SH SYNOPSIS
 .B wallace
 [\fB\-t\fR|\fB\-\-timeframe\fR \fISPEC\fR] [\fB\-\-config\fR \fIPATH\fR] [\fB\-\-help\fR | \fB\-\-help\-all\fR | \fB\-\-version\fR]
 .br
 .B wallace browse
-[\fICONVERSATION_ID\fR] [\fB\-t\fR|\fB\-\-timeframe\fR \fISPEC\fR] [\fB\-\-source\fR \fBall\fR|\fBagy\fR|\fBclaude\fR|\fBgrok\fR] [\fB\-\-query\fR \fITEXT\fR] [\fIOPTIONS\fR]
+[\fICONVERSATION_ID\fR] [\fB\-t\fR|\fB\-\-timeframe\fR \fISPEC\fR] [\fB\-\-source\fR \fBall\fR|\fBagy\fR|\fBclaude\fR|\fBgrok\fR|\fBcodex\fR] [\fB\-\-query\fR \fITEXT\fR] [\fIOPTIONS\fR]
 .br
 .B wallace report
 [\fBsummary\fR|\fBprojects\fR|\fBfeatures\fR|\fBconversations\fR|\fBmodels\fR|\fBsources\fR|\fBdaily\fR|\fBweekly\fR|\fBmonthly\fR|\fBinterval\fR]
@@ -39,7 +39,7 @@ wallace \- forensic token usage auditor and conversation browser for AGY, Claude
 Named after Oscar Wallace, the Treasury accountant who followed the ledger in
 \fIThe Untouchables\fR, \fBwallace\fR audits Antigravity IDE
 (\fI~/.gemini/antigravity\fR), Antigravity CLI (\fI~/.gemini/antigravity-cli\fR),
-Claude Code (\fI~/.claude\fR), and Grok CLI (\fI~/.grok\fR) session directories.
+Claude Code (\fI~/.claude\fR), Grok CLI (\fI~/.grok\fR), and OpenAI Codex (\fI~/.codex\fR) session directories.
 It resolves canonical \fI<PROJECT>\-WP\-<NN>\fR identifiers from git branches,
 worker names, titles, and initial prompt briefs, aggregates exact or text-estimated
 tokens alongside USD spend, and provides a minimalistic single-viewport TUI
@@ -68,7 +68,7 @@ bare \fIWP\-NN\fR fallbacks, explicit \fB\-\-conversation\fR UUIDs, optional
 .TP
 .B browse [\fICONVERSATION_ID\fR]
 Launch the minimalistic interactive \fBcurses\fR conversation browser across
-All, AGY, Claude, and Grok sessions. Press \fBt\fR in list view to cycle
+All, AGY, Claude, Grok, and Codex sessions. Press \fBt\fR in list view to cycle
 timeframe windows (\fBall\fR, \fBtoday\fR, \fByesterday\fR, \fB7d\fR, \fB30d\fR,
 \fBthis\-month\fR, \fBlast\-month\fR). Requires an interactive TTY.
 .TP
@@ -100,8 +100,8 @@ Install an executable \fBwallace\fR launcher shim into \fB\-\-bin\-dir\fR or
 .B WALLACE_CONFIG
 Path to TOML configuration file (default: \fI~/.config/wallace/config.toml\fR).
 .TP
-.B WALLACE_IDE_DIR, WALLACE_CLI_DIR, WALLACE_CLAUDE_DIR, WALLACE_GROK_DIR, WALLACE_BRAIN_DIRS
-Override Antigravity IDE, Antigravity CLI, Claude, Grok, and standalone brain directories.
+.B WALLACE_IDE_DIR, WALLACE_CLI_DIR, WALLACE_CLAUDE_DIR, WALLACE_GROK_DIR, WALLACE_CODEX_DIR, WALLACE_BRAIN_DIRS
+Override Antigravity IDE, Antigravity CLI, Claude, Grok, Codex, and standalone brain directories.
 .TP
 .B WALLACE_BIN_DIR
 Override target directory for \fBwallace install\fR (default: \fI~/.local/bin\fR).

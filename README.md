@@ -54,7 +54,7 @@ uv run wallace metrics export
 
 ## Documentation
 
-Full Zensical User, Operations, and Developer documentation lives in [`docs/`](https://github.com/lino/wallace/tree/main/docs) and builds strictly via `mise run docs`. A native Unix manpage ships at [`man/wallace.1`](https://github.com/lino/wallace/blob/main/man/wallace.1).
+Full Zensical documentation organized with the [Diátaxis](https://diataxis.fr/) framework (Tutorials, How-to Guides, Reference, and Explanation) is published at [lino.github.io/wallace](https://lino.github.io/wallace/), lives in [`docs/`](https://github.com/lino/wallace/tree/main/docs), and builds strictly via `mise run docs`. A native Unix manpage ships at [`man/wallace.1`](https://github.com/lino/wallace/blob/main/man/wallace.1).
 
 ### Pricing
 

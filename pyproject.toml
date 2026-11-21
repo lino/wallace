@@ -46,7 +46,7 @@ dependencies = [
 Homepage = "https://github.com/lino/wallace"
 Repository = "https://github.com/lino/wallace"
 Issues = "https://github.com/lino/wallace/issues"
-Documentation = "https://github.com/lino/wallace/tree/main/docs"
+Documentation = "https://lino.github.io/wallace/"
 
 [project.scripts]
 wallace = "wallace.cli:main"
